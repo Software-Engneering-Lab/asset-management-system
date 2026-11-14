@@ -19,6 +19,12 @@ export default function NavBar({ user }: { user: CurrentUser }) {
         {canRegister && <Link href="/assets/new" className="hover:underline">Register asset</Link>}
         {isAdmin && <Link href="/admin/departments" className="hover:underline">Departments</Link>}
         {isAdmin && <Link href="/admin/users" className="hover:underline">Users &amp; roles</Link>}
+        {/* Only approvers and admins see the approval page link. */}
+        {AuthService.hasRole(user, ROLES.APPROVER, ROLES.ADMIN) && (
+          <Link href="/approvals" className="hover:underline">
+            Approvals
+          </Link>
+        )}
         <span className="ml-auto text-blue-100">
           {user.fullName} · {user.roles.join(", ") || "no role"}
           {user.departmentName ? ` · ${user.departmentName}` : ""}
