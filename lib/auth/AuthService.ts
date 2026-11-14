@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
+import { throwIfError } from "@/lib/services/DataLoadError";
 import { createClient } from "@/lib/supabase/server";
-import type { CurrentUser } from "@/lib/types";
-import type { RoleName } from "@/lib/constants";
+import { one, type CurrentUser, type Joined } from "@/lib/types";
+import { ROLES, type RoleName } from "@/lib/constants";
 
 const GENERIC_SIGN_IN_ERROR = "Sign-in failed. Check your details and try again.";
 
@@ -38,24 +39,26 @@ export class AuthService {
     } = await supabase.auth.getUser();
     if (!user) return null;
 
-    const { data: appUser } = await supabase
+    const { data: appUser, error: profileError } = await supabase
       .from("app_user")
       .select("user_id, full_name, email, department_id, account_status, department(name)")
       .eq("user_id", user.id)
       .maybeSingle();
 
+    throwIfError(profileError, "your profile");
     if (!appUser || appUser.account_status !== "active") return null;
 
-    const { data: roleRows } = await supabase
+    const { data: roleRows, error: rolesError } = await supabase
       .from("user_role")
       .select("role(role_name)")
       .eq("user_id", user.id);
+    throwIfError(rolesError, "your roles");
 
     const roles = (roleRows ?? [])
-      .map((r: any) => (Array.isArray(r.role) ? r.role[0]?.role_name : r.role?.role_name))
+      .map((r: { role: Joined<{ role_name: string }> }) => one(r.role)?.role_name)
       .filter(Boolean) as RoleName[];
 
-    const dept: any = Array.isArray(appUser.department) ? appUser.department[0] : appUser.department;
+    const dept = one(appUser.department as Joined<{ name: string }>);
 
     return {
       userId: appUser.user_id,
@@ -65,6 +68,21 @@ export class AuthService {
       departmentName: dept?.name ?? null,
       roles,
     };
+  }
+
+  /** True when a Supabase login session exists (even without an active profile). */
+  static async hasSession(): Promise<boolean> {
+    const supabase = await createClient();
+    const { data } = await supabase.auth.getClaims();
+    return Boolean(data?.claims);
+  }
+
+  /**
+   * First page after login: one every role is allowed to open.
+   * Staff who manage assets go to their department list; everyone else to search.
+   */
+  static homePath(user: CurrentUser): string {
+    return AuthService.hasRole(user, ROLES.CUSTODIAN, ROLES.ADMIN, ROLES.APPROVER) ? "/assets" : "/search";
   }
 
   static hasRole(user: CurrentUser, ...allowed: RoleName[]): boolean {

@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { throwIfError } from "@/lib/services/DataLoadError";
 import type { Department } from "@/lib/types";
 
 /** C2 – departments (FR-04). Only the System Administrator may write (enforced by RLS). */
@@ -7,7 +8,8 @@ export class DepartmentService {
     const supabase = await createClient();
     let query = supabase.from("department").select("department_id, code, name, is_active").order("name");
     if (activeOnly) query = query.eq("is_active", true);
-    const { data } = await query;
+    const { data, error } = await query;
+    throwIfError(error, "departments");
     return (data ?? []) as Department[];
   }
 

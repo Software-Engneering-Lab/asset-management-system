@@ -4,7 +4,7 @@
 --
 -- FIRST create these 4 login users:
 --   Supabase → Authentication → Users → Add user → Create new user
---   (tick "Auto Confirm User"; password e.g. Demo@12345)
+--   (tick "Auto Confirm User"; give each a private, unique password shared only with the team)
 --     admin@demo.ku.ac.ae      custodian@demo.ku.ac.ae
 --     requester@demo.ku.ac.ae  approver@demo.ku.ac.ae
 -- =====================================================================

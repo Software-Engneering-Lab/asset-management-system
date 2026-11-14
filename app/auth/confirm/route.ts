@@ -7,7 +7,9 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const token_hash = searchParams.get("token_hash");
   const type = searchParams.get("type") as EmailOtpType | null;
-  const next = searchParams.get("next") ?? "/";
+  // Only follow paths inside this site (blocks "//evil.com" or "https://…" open redirects)
+  const requested = searchParams.get("next") ?? "/";
+  const next = requested.startsWith("/") && !requested.startsWith("//") ? requested : "/";
 
   if (token_hash && type) {
     const supabase = await createClient();

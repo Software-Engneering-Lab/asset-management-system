@@ -15,6 +15,8 @@ export default function NavBar({ user }: { user: CurrentUser }) {
       <nav className="mx-auto flex max-w-6xl flex-wrap items-center gap-4 px-4 py-3 text-sm">
         <span className="font-semibold">Campus Resource Exchange</span>
         <Link href="/search" className="hover:underline">Search assets</Link>
+        {/* C4 (Shaikha): request form and tracking live under /protected/requests */}
+        <Link href="/protected/requests" className="hover:underline">Requests</Link>
         {canManageAssets && <Link href="/assets" className="hover:underline">My department&apos;s assets</Link>}
         {canRegister && <Link href="/assets/new" className="hover:underline">Register asset</Link>}
         {isAdmin && <Link href="/admin/departments" className="hover:underline">Departments</Link>}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { registerAssetAction } from "./actions";
 import { CONDITIONS } from "@/lib/constants";
 import type { AssetCategory, Department, FormState } from "@/lib/types";
@@ -8,7 +8,7 @@ import type { AssetCategory, Department, FormState } from "@/lib/types";
 interface Props {
   categories: AssetCategory[];
   departments: Department[];
-  custodians: { user_id: string; full_name: string }[];
+  custodians: { user_id: string; full_name: string; department_id: string }[];
   defaultDepartmentId: string | null;
   defaultCustodianId: string;
 }
@@ -19,6 +19,11 @@ export default function AssetForm({ categories, departments, custodians, default
   const [state, formAction, pending] = useActionState(registerAssetAction, initial);
   const v = state.values ?? {};
   const err = state.errors ?? {};
+  // Only custodians of the chosen department can be responsible for the asset
+  const [departmentId, setDepartmentId] = useState(v.owning_department_id ?? defaultDepartmentId ?? "");
+  const deptCustodians = custodians.filter((u) => u.department_id === departmentId);
+  const preferred = v.custodian_id ?? defaultCustodianId;
+  const custodianDefault = deptCustodians.some((u) => u.user_id === preferred) ? preferred : "";
 
   const field = "mt-1 w-full rounded border bg-background px-3 py-2";
   const Err = ({ name }: { name: string }) =>
@@ -83,7 +88,7 @@ export default function AssetForm({ categories, departments, custodians, default
       <div>
         <label htmlFor="owning_department_id" className="block text-sm font-medium">Owning department *</label>
         <select id="owning_department_id" name="owning_department_id"
-          defaultValue={v.owning_department_id ?? defaultDepartmentId ?? ""} className={field}>
+          value={departmentId} onChange={(e) => setDepartmentId(e.target.value)} className={field}>
           <option value="">Select…</option>
           {departments.map((d) => <option key={d.department_id} value={d.department_id}>{d.code} – {d.name}</option>)}
         </select>
@@ -98,9 +103,11 @@ export default function AssetForm({ categories, departments, custodians, default
 
       <div>
         <label htmlFor="custodian_id" className="block text-sm font-medium">Responsible custodian</label>
-        <select id="custodian_id" name="custodian_id" defaultValue={v.custodian_id ?? defaultCustodianId} className={field}>
-          {custodians.map((u) => <option key={u.user_id} value={u.user_id}>{u.full_name}</option>)}
+        <select id="custodian_id" name="custodian_id" key={departmentId} defaultValue={custodianDefault} className={field}>
+          <option value="">No custodian assigned</option>
+          {deptCustodians.map((u) => <option key={u.user_id} value={u.user_id}>{u.full_name}</option>)}
         </select>
+        <p className="mt-1 text-xs text-muted-foreground">Only custodians of the owning department are listed.</p>
       </div>
 
       <fieldset className="grid gap-4 border-t pt-4 md:col-span-2 md:grid-cols-3">
