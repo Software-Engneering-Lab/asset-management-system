@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import MatchingPanel from "./matching-panel";
 import {
   loadRequestWorkspace,
   submitRequest,
@@ -355,6 +356,10 @@ export default function RequestsPage() {
                         </ol>
                       )}
                     </details>
+                                        <MatchingPanel
+                      requestId={request.request_id}
+                      requestStatus={request.request_status}
+                    />
                   </li>
                 ))}
               </ul>
