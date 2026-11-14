@@ -2,306 +2,98 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createMatchingWriter } from "./matching-db";
-import {
-  rankEligibleAssets,
-  type EligibleCandidate,
-} from "./rank-assets";
+import { rankEligibleAssets } from "./rank-assets";
+import { eligibleCandidates, parsePacket, parseRequirements } from "./matching-contract";
 
 export type SavedMatch = {
-  recommendation_id: string;
-  asset_id: string;
-  name: string;
-  condition: string;
-  available_quantity: number;
-  rank_position: number;
-  compatibility_score: number;
-  confidence: number | null;
-  explanation: string;
-  review_status: "pending" | "accepted" | "rejected";
-  review_reason: string | null;
-  created_at: string;
+  recommendation_id: string; asset_id: string; name: string; condition: string;
+  available_quantity: number; rank_position: number; compatibility_score: number;
+  confidence: number | null; explanation: string; review_status: "pending" | "accepted" | "rejected";
+  review_reason: string | null; created_at: string;
+  scoring_version: string | null; evidence_coverage: number | null;
+  factor_values: Record<string, number | null> | null;
+  factor_contributions: Record<string, number | null> | null;
+  warnings: string[]; currently_eligible: boolean;
 };
-
-export type FallbackAsset = {
-  asset_id: string;
-  name: string;
-  condition: string;
-};
-
-type MatchResult =
-  | {
-      success: true;
-      matches: SavedMatch[];
-      message: string;
-    }
-  | {
-      success: false;
-      message: string;
-      fallback?: FallbackAsset[];
-    };
-
-const uuidPattern =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function object(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+export type FallbackAsset = { asset_id: string; name: string; condition: string };
+type MatchResult = { success: true; matches: SavedMatch[]; message: string } |
+  { success: false; message: string; fallback?: FallbackAsset[] };
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function databaseMessage(code: string) {
-  if (code === "PGRST202") {
-    return "Matching is not enabled yet. The reviewed matching migrations must be applied.";
-  }
+  if (["PGRST202", "42703", "42P01"].includes(code)) return "Matching correction is not enabled yet. The reviewed corrective migration must be applied.";
+  if (code === "42501") return "Access denied. An active requester profile and ownership of this request are required.";
+  if (code === "22023") return "The request/evidence/availability changed or the input is invalid. Refresh before retrying.";
+  if (code === "P0001") return "Please wait at least 15 seconds between matching attempts.";
+  return "Database operation failed. Refresh before retrying.";
+}
 
-  if (code === "42501") {
-    return "Access denied. Check your active profile, requester role and request ownership.";
-  }
-
-  if (code === "22023") {
-    return "The request or asset availability changed, or the decision is invalid. Refresh and try again.";
-  }
-
-  return "The database operation failed. Refresh before trying again.";
+export async function confirmMatchingRequirements(requestId: string, mandatoryText: string, preferredText: string) {
+  try {
+    if (!uuid.test(requestId) || typeof mandatoryText !== "string" || typeof preferredText !== "string" || mandatoryText.length > 20000 || preferredText.length > 20000) throw new Error("Invalid requirements.");
+    const mandatory = parseRequirements(JSON.parse(mandatoryText));
+    const preferred = parseRequirements(JSON.parse(preferredText));
+    const db = await createClient();
+    const { data: auth, error: authError } = await db.auth.getUser();
+    if (authError || !auth.user) return { success: false, message: "Please sign in." };
+    const { error } = await db.rpc("shaikha_confirm_matching_requirements", { p_request_id: requestId, p_mandatory: mandatory, p_preferred: preferred });
+    if (error) return { success: false, message: databaseMessage(error.code) };
+    return { success: true, message: "Structured requirements confirmed. Previous rankings may be stale; generate a new run." };
+  } catch { return { success: false, message: "Use JSON arrays of field, operator (eq/gte/lte), and typed value. Use [] only if none apply." }; }
 }
 
 export async function loadMatches(requestId: string): Promise<MatchResult> {
-  if (!uuidPattern.test(requestId)) {
-    return { success: false, message: "Invalid request reference." };
-  }
-
+  if (!uuid.test(requestId)) return { success: false, message: "Invalid request reference." };
   try {
-    const supabase = await createClient();
-    const { data: auth, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !auth.user) {
-      return { success: false, message: "Please sign in." };
-    }
-
-    const { data, error } = await supabase.rpc("shaikha_read_matches", {
-      p_request_id: requestId,
-      p_ranking_run_id: null,
-    });
-
-    if (error) {
-      return { success: false, message: databaseMessage(error.code) };
-    }
-
-    if (!data || !Array.isArray(data.matches)) {
-      return { success: false, message: "Unexpected matching response." };
-    }
-
-    return {
-      success: true,
-      matches: data.matches as SavedMatch[],
-      message:
-        data.matches.length > 0
-          ? "Showing the latest saved ranking. Availability may have changed."
-          : "No saved recommendations. Select Generate matches.",
-    };
-  } catch {
-    return { success: false, message: "Unable to load saved matches." };
-  }
+    const db = await createClient();
+    const { data: auth, error: authError } = await db.auth.getUser();
+    if (authError || !auth.user) return { success: false, message: "Please sign in." };
+    const { data, error } = await db.rpc("shaikha_read_matches", { p_request_id: requestId, p_ranking_run_id: null });
+    if (error) return { success: false, message: databaseMessage(error.code) };
+    if (!data || data.contract_version !== "weighted-evidence-v1" || !Array.isArray(data.matches)) return { success: false, message: "Corrective matching migration is not installed." };
+    return { success: true, matches: data.matches as SavedMatch[], message: data.matches.length ? "Latest saved weighted run. Stale recommendations cannot be accepted." : "No corrected saved recommendations. Legacy AI-invented scores are not shown." };
+  } catch { return { success: false, message: "Unable to load saved matches." }; }
 }
 
-export async function generateMatches(
-  requestId: string,
-): Promise<MatchResult> {
-  if (!uuidPattern.test(requestId)) {
-    return { success: false, message: "Invalid request reference." };
-  }
-
+export async function generateMatches(requestId: string): Promise<MatchResult> {
+  if (!uuid.test(requestId)) return { success: false, message: "Invalid request reference." };
   try {
-    const supabase = await createClient();
-    const { data: auth, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !auth.user) {
-      return { success: false, message: "Please sign in." };
-    }
-
-    // Check server configuration before consuming AI quota.
-    if (!process.env.GEMINI_API_KEY || !process.env.GEMINI_MODEL) {
-      return {
-        success: false,
-        message: "Gemini is not configured on the server.",
-      };
-    }
-
+    const db = await createClient();
+    const { data: auth, error: authError } = await db.auth.getUser();
+    if (authError || !auth.user) return { success: false, message: "Please sign in." };
+    const { data: raw, error } = await db.rpc("shaikha_matching_candidates", { p_request_id: requestId });
+    if (error) return { success: false, message: databaseMessage(error.code) };
+    const packet = parsePacket(raw);
+    if (packet.request_id !== requestId) throw new Error("Mismatched request.");
+    const checked = eligibleCandidates(packet);
+    if (checked.mandatory === null) return { success: false, message: "Confirm structured mandatory/preferred requirements below before ranking. Free text is not treated as verified requirements." };
+    if (!checked.eligible.length) return { success: true, matches: [], message: `No verified eligible assets in the ${packet.candidates.length}-asset shortlist (${packet.base_total} basic candidates total). ${checked.excluded.length} excluded for missing, stale or failing evidence. No AI call was made. Available/Good alone does not establish safety.` };
+    const fallback = checked.eligible.slice(0, 5).map((c) => ({ asset_id: c.asset_id, name: c.name, condition: c.condition }));
+    if (!process.env.GEMINI_API_KEY || !process.env.GEMINI_MODEL) return { success: false, message: "AI is unconfigured. These are verified unranked rule-based results, without scores.", fallback };
     const writer = createMatchingWriter();
-
-    // This user-scoped operation checks ownership and requester permission.
-    const { data: raw, error: candidateError } = await supabase.rpc(
-      "shaikha_matching_candidates",
-      { p_request_id: requestId },
-    );
-
-    if (candidateError) {
-      return {
-        success: false,
-        message: databaseMessage(candidateError.code),
-      };
-    }
-
-    if (
-      !object(raw) ||
-      raw.request_id !== requestId ||
-      typeof raw.specifications !== "string" ||
-      typeof raw.eligible_total !== "number" ||
-      !Array.isArray(raw.candidates) ||
-      raw.candidates.length > 25
-    ) {
-      return { success: false, message: "Unexpected candidate response." };
-    }
-
-    const candidates: EligibleCandidate[] = [];
-
-    for (const item of raw.candidates) {
-      if (
-        !object(item) ||
-        typeof item.asset_id !== "string" ||
-        !uuidPattern.test(item.asset_id) ||
-        typeof item.name !== "string" ||
-        typeof item.description !== "string" ||
-        typeof item.condition !== "string"
-      ) {
-        return { success: false, message: "Invalid asset data." };
-      }
-
-      candidates.push({
-        asset_id: item.asset_id,
-        name: item.name,
-        description: item.description,
-        condition: item.condition,
-      });
-    }
-
-    if (candidates.length === 0) {
-      return {
-        success: true,
-        matches: [],
-        message: "No currently eligible assets. No AI request was made.",
-      };
-    }
-
     let ranking: Awaited<ReturnType<typeof rankEligibleAssets>>;
-
-    try {
-      ranking = await rankEligibleAssets(raw.specifications, candidates);
-    } catch {
-      return {
-        success: false,
-        message:
-          "AI ranking is unavailable, timed out or returned invalid results. Below are unranked eligible assets—not AI recommendations.",
-        fallback: candidates.slice(0, 5).map((candidate) => ({
-          asset_id: candidate.asset_id,
-          name: candidate.name,
-          condition: candidate.condition,
-        })),
-      };
-    }
-
-    if (ranking.matches.length === 0) {
-      return {
-        success: true,
-        matches: [],
-        message:
-          "AI found no relevant matches in the eligible shortlist. No new ranking was saved; older saved results remain in history.",
-      };
-    }
-
+    try { ranking = await rankEligibleAssets(packet); }
+    catch { return { success: false, message: "AI unavailable, timed out or invalid semantic evidence. These are unranked rule-based results, not AI scores.", fallback }; }
     const runId = crypto.randomUUID();
-
-    // Identity comes from the verified session, never a browser parameter.
-    // Only the restricted server writer can save AI-generated scores.
-    const { error: saveError } = await writer.rpc("shaikha_save_matches", {
-      p_actor_id: auth.user.id,
-      p_request_id: requestId,
-      p_ranking_run_id: runId,
-      p_model_name: process.env.GEMINI_MODEL,
-      p_model_version: ranking.modelVersion,
-      p_specifications_snapshot: raw.specifications,
-      p_matches: ranking.matches,
+    const { error: saveError } = await writer.rpc("shaikha_save_weighted_matches", {
+      p_actor_id: auth.user.id, p_request_id: requestId, p_ranking_run_id: runId,
+      p_model_name: process.env.GEMINI_MODEL, p_model_version: ranking.modelVersion,
+      p_packet: packet, p_matches: ranking.matches,
     });
-
-    if (saveError) {
-      return {
-        success: false,
-        message: databaseMessage(saveError.code),
-      };
-    }
-
-    const { data: saved, error: readError } = await supabase.rpc(
-      "shaikha_read_matches",
-      {
-        p_request_id: requestId,
-        p_ranking_run_id: runId,
-      },
-    );
-
-    if (readError || !saved || !Array.isArray(saved.matches)) {
-      return {
-        success: false,
-        message:
-          "Ranking was saved, but could not be displayed. Use Load saved matches before generating again.",
-      };
-    }
-
-    return {
-      success: true,
-      matches: saved.matches as SavedMatch[],
-      message: `Saved ${saved.matches.length} AI recommendations from ${candidates.length} shortlisted candidates (${raw.eligible_total} eligible in total).`,
-    };
-  } catch {
-    return {
-      success: false,
-      message:
-        "Matching could not be completed. Check server configuration and use Load saved matches before retrying.",
-    };
-  }
+    if (saveError) return { success: false, message: databaseMessage(saveError.code) };
+    const { data: saved, error: readError } = await db.rpc("shaikha_read_matches", { p_request_id: requestId, p_ranking_run_id: runId });
+    if (readError || !saved || !Array.isArray(saved.matches)) return { success: false, message: "Run saved but display unconfirmed. Load saved matches before retrying." };
+    return { success: true, matches: saved.matches as SavedMatch[], message: `Saved ${saved.matches.length} weighted recommendations from ${checked.eligible.length} verified eligible shortlisted assets; ${packet.base_total} basic candidates total. Missing confidence is warned; no top-pick claim.` };
+  } catch { return { success: false, message: "Matching setup or evidence unavailable. Check the corrective migration and server configuration. Unverified assets will not be ranked." }; }
 }
 
-export async function reviewMatch(
-  recommendationId: string,
-  decision: "accepted" | "rejected",
-  reason: string,
-): Promise<{ success: boolean; message: string }> {
-  if (
-    !uuidPattern.test(recommendationId) ||
-    !["accepted", "rejected"].includes(decision) ||
-    typeof reason !== "string" ||
-    reason.trim().length > 1000 ||
-    (decision === "rejected" && !reason.trim())
-  ) {
-    return {
-      success: false,
-      message: "Provide a valid decision and a reason when rejecting.",
-    };
-  }
-
+export async function reviewMatch(recommendationId: string, decision: "accepted" | "rejected", reason: string) {
+  if (!uuid.test(recommendationId) || !["accepted", "rejected"].includes(decision) || typeof reason !== "string" || reason.trim().length > 1000 || (decision === "rejected" && !reason.trim())) return { success: false, message: "Valid decision required; rejection needs a reason." };
   try {
-    const supabase = await createClient();
-    const { data: auth, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !auth.user) {
-      return { success: false, message: "Please sign in." };
-    }
-
-    const { error } = await supabase.rpc("shaikha_review_match", {
-      p_recommendation_id: recommendationId,
-      p_decision: decision,
-      p_reason: reason.trim() || null,
-    });
-
-    if (error) {
-      return { success: false, message: databaseMessage(error.code) };
-    }
-
-    return {
-      success: true,
-      message: `Recommendation ${decision}. This does not approve or reserve an asset.`,
-    };
-  } catch {
-    return {
-      success: false,
-      message: "Unable to confirm the decision. Load saved matches to check.",
-    };
-  }
+    const db = await createClient();
+    const { data: auth, error: authError } = await db.auth.getUser();
+    if (authError || !auth.user) return { success: false, message: "Please sign in." };
+    const { error } = await db.rpc("shaikha_review_match", { p_recommendation_id: recommendationId, p_decision: decision, p_reason: reason.trim() || null });
+    return error ? { success: false, message: databaseMessage(error.code) } : { success: true, message: `Recommendation ${decision}. No approval, reservation or ownership change occurred.` };
+  } catch { return { success: false, message: "Review unconfirmed. Reload saved results." }; }
 }
