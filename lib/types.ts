@@ -87,3 +87,9 @@ export interface FormState {
   errors?: Record<string, string>;
   values?: Record<string, string>;
 }
+
+/** Supabase returns a joined row as an object or a one-item array; this reads either. */
+export type Joined<T> = T | T[] | null | undefined;
+export function one<T>(value: Joined<T>): T | null {
+  return Array.isArray(value) ? value[0] ?? null : value ?? null;
+}

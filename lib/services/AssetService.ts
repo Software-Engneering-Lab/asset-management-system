@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { throwIfError } from "@/lib/services/DataLoadError";
 import { ASSET_STATES, ROLES } from "@/lib/constants";
 import { AuthService } from "@/lib/auth/AuthService";
 import type {
@@ -24,22 +25,20 @@ const ASSET_COLUMNS =
 export class AssetService {
   static async listCategories(): Promise<AssetCategory[]> {
     const supabase = await createClient();
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("asset_category")
       .select("category_id, name, parent_category_id")
       .order("name");
+    throwIfError(error, "categories");
     return (data ?? []) as AssetCategory[];
   }
 
-  /** People who can be chosen as custodian. */
-  static async listCustodians(): Promise<{ user_id: string; full_name: string }[]> {
+  /** Active custodians (with their department) who may be responsible for an asset. */
+  static async listCustodians(): Promise<{ user_id: string; full_name: string; department_id: string }[]> {
     const supabase = await createClient();
-    const { data } = await supabase
-      .from("app_user")
-      .select("user_id, full_name")
-      .eq("account_status", "active")
-      .order("full_name");
-    return data ?? [];
+    const { data, error } = await supabase.rpc("list_custodians");
+    throwIfError(error, "custodians");
+    return (data ?? []) as { user_id: string; full_name: string; department_id: string }[];
   }
 
   /** FR-06, FR-07: register a new asset. Returns the new asset ID. */
@@ -73,22 +72,25 @@ export class AssetService {
 
   static async getById(assetId: string): Promise<Asset | null> {
     const supabase = await createClient();
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("asset")
       .select(ASSET_COLUMNS)
       .eq("asset_id", assetId)
       .maybeSingle();
+    throwIfError(error, "the asset");
+    // No error and no row = the asset does not exist or this user may not see it (404)
     return (data as unknown as Asset) ?? null;
   }
 
   /** Who did what, and when (feeds C6). */
   static async getHistory(assetId: string): Promise<AssetHistoryEvent[]> {
     const supabase = await createClient();
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("asset_history_event")
       .select("event_id, event_type, previous_state, new_state, details, event_at, app_user(full_name)")
       .eq("asset_id", assetId)
       .order("event_at", { ascending: false });
+    throwIfError(error, "the asset history");
     return (data ?? []) as unknown as AssetHistoryEvent[];
   }
 
@@ -102,19 +104,19 @@ export class AssetService {
       if (user.departmentId) filters.push(`owning_department_id.eq.${user.departmentId}`);
       query = query.or(filters.join(","));
     }
-    const { data } = await query;
+    const { data, error } = await query;
+    throwIfError(error, "your department's assets");
     return (data ?? []) as unknown as Asset[];
   }
 
-  /** Can this user publish this asset? (Used to show the button; the database checks again.) */
+  /**
+   * Can this user publish this asset? Admin, or a custodian of the OWNING department.
+   * Being the asset's custodian alone is not enough. (Shows the button; the database checks again.)
+   */
   static canPublish(user: CurrentUser, asset: Asset): boolean {
     if (asset.asset_state !== ASSET_STATES.REGISTERED) return false;
     if (AuthService.hasRole(user, ROLES.ADMIN)) return true;
-    // Custodian of this asset, or a custodian in the owning department
-    return (
-      AuthService.hasRole(user, ROLES.CUSTODIAN) &&
-      (asset.custodian_id === user.userId || asset.owning_department_id === user.departmentId)
-    );
+    return AuthService.hasRole(user, ROLES.CUSTODIAN) && asset.owning_department_id === user.departmentId;
   }
 
   /** FR-12, FR-13: keyword search + filters over published, available assets only. */
@@ -134,7 +136,8 @@ export class AssetService {
     if (filters.condition) query = query.eq("condition", filters.condition);
     if (filters.departmentId) query = query.eq("owning_department_id", filters.departmentId);
 
-    const { data } = await query;
+    const { data, error } = await query;
+    throwIfError(error, "search results");
     return (data ?? []) as unknown as Asset[];
   }
 }

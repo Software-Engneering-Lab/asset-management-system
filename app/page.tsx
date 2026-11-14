@@ -1,6 +1,18 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
+import { AuthService } from "@/lib/auth/AuthService";
 
-// Home page: signed-in users go to asset search; the proxy sends everyone else to /auth/login.
+// Home: each role goes to a page it may open; signed-out users go to login.
+async function HomeContent() {
+  const user = await AuthService.requireUser();
+  redirect(AuthService.homePath(user));
+  return null;
+}
+
 export default function Home() {
-  redirect("/search");
+  return (
+    <Suspense fallback={<p className="p-4 text-sm text-muted-foreground">Loading…</p>}>
+      <HomeContent />
+    </Suspense>
+  );
 }
