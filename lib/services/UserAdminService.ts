@@ -1,4 +1,9 @@
 import { createClient } from "@/lib/supabase/server";
+import { throwIfError } from "@/lib/services/DataLoadError";
+import { one, type Joined } from "@/lib/types";
+
+type UserRow = { user_id: string; full_name: string; email: string; account_status: string; department: Joined<{ name: string }> };
+type LinkRow = { user_role_id: string; user_id: string; role: Joined<{ role_name: string }> };
 
 export interface UserWithRoles {
   user_id: string;
@@ -16,13 +21,14 @@ export interface UserWithRoles {
 export class UserAdminService {
   static async listRoles(): Promise<{ role_id: string; role_name: string }[]> {
     const supabase = await createClient();
-    const { data } = await supabase.from("role").select("role_id, role_name").order("role_name");
+    const { data, error } = await supabase.from("role").select("role_id, role_name").order("role_name");
+    throwIfError(error, "roles");
     return data ?? [];
   }
 
   static async listUsers(): Promise<UserWithRoles[]> {
     const supabase = await createClient();
-    const [{ data: users }, { data: links }] = await Promise.all([
+    const [{ data: users, error: usersError }, { data: links, error: linksError }] = await Promise.all([
       supabase
         .from("app_user")
         .select("user_id, full_name, email, account_status, department(name)")
@@ -30,20 +36,19 @@ export class UserAdminService {
       supabase.from("user_role").select("user_role_id, user_id, role(role_name)"),
     ]);
 
-    return (users ?? []).map((u: any) => {
-      const dept = Array.isArray(u.department) ? u.department[0] : u.department;
+    throwIfError(usersError, "users");
+    throwIfError(linksError, "role assignments");
+    return ((users ?? []) as unknown as UserRow[]).map((u) => {
+      const dept = one(u.department);
       return {
         user_id: u.user_id,
         full_name: u.full_name,
         email: u.email,
         account_status: u.account_status,
         department_name: dept?.name ?? null,
-        roles: (links ?? [])
-          .filter((l: any) => l.user_id === u.user_id)
-          .map((l: any) => ({
-            user_role_id: l.user_role_id,
-            role_name: Array.isArray(l.role) ? l.role[0]?.role_name : l.role?.role_name,
-          })),
+        roles: ((links ?? []) as unknown as LinkRow[])
+          .filter((l) => l.user_id === u.user_id)
+          .map((l) => ({ user_role_id: l.user_role_id, role_name: one(l.role)?.role_name ?? "" })),
       };
     });
   }
@@ -51,7 +56,8 @@ export class UserAdminService {
   /** Signed-up login accounts that do not have a profile yet. */
   static async listUnprovisioned(): Promise<{ user_id: string; email: string; created_at: string }[]> {
     const supabase = await createClient();
-    const { data } = await supabase.rpc("list_unprovisioned_users");
+    const { data, error } = await supabase.rpc("list_unprovisioned_users");
+    throwIfError(error, "new accounts");
     return (data ?? []) as { user_id: string; email: string; created_at: string }[];
   }
 

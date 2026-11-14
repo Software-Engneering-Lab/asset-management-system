@@ -15,7 +15,8 @@ export async function signInAction(_prev: FormState, formData: FormData): Promis
   const result = await AuthService.signIn(email, password);
   if (!result.ok) return { ok: false, message: result.message, values: { email } };
 
-  redirect("/assets");
+  const user = await AuthService.getCurrentUser();
+  redirect(user ? AuthService.homePath(user) : "/auth/login");
 }
 
 export async function signOutAction(): Promise<void> {
