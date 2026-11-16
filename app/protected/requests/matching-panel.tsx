@@ -5,6 +5,7 @@ import {
   generateMatches,
   loadMatches,
   reviewMatch,
+  confirmMatchingRequirements,
   type SavedMatch,
   type FallbackAsset,
 } from "./matching-actions";
@@ -22,9 +23,29 @@ export default function MatchingPanel({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [mandatoryText, setMandatoryText] = useState("");
+  const [preferredText, setPreferredText] = useState("");
+  const [confirmed, setConfirmed] = useState(false);
   const running = useRef(false);
 
   const canReview = ["Submitted", "Under Review"].includes(requestStatus);
+
+  async function handleRequirements() {
+    if (running.current || !confirmed) return;
+    running.current = true;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const result = await confirmMatchingRequirements(requestId, mandatoryText, preferredText);
+      if (result.success) {
+        setMatches([]);
+        setFallback([]);
+        setMessage(result.message);
+      } else setError(result.message);
+    } catch { setError("Requirements could not be confirmed. Please retry."); }
+    finally { running.current = false; setBusy(false); }
+  }
 
   async function handleLoad(generate: boolean) {
     if (running.current) return;
@@ -110,10 +131,34 @@ export default function MatchingPanel({
       <h4 className="font-semibold">Asset matching</h4>
 
       <p className="text-sm text-muted-foreground">
-        Up to five AI recommendations from a shortlist of at most 25 eligible
-        assets. Scores estimate suitability, not confidence. Acceptance does
+        Up to five weighted recommendations from a shortlist of at most 25 basic
+        candidates, after verified eligibility checks. AI supplies purpose similarity,
+        not the overall score. Scores estimate suitability, not confidence. Acceptance does
         not approve a request or reserve stock.
       </p>
+
+      {canReview && <details className="rounded-md border p-3">
+        <summary className="cursor-pointer font-medium">Confirm structured specifications before matching</summary>
+        <p className="mt-2 text-sm">Record all mandatory conditions from your request as typed JSON clauses.
+          Fields and units must match verified asset evidence. For example: <code>{'[{"field":"ram_gb","operator":"gte","value":16}]'}</code>.
+          Use <code>[]</code> only when you explicitly have no requirements in that group.
+          Unconfirmed requirements or unverified safety, inspection or date evidence block matching.</p>
+        <label className="mt-3 block text-sm">Mandatory specifications
+          <textarea value={mandatoryText} onChange={(e) => setMandatoryText(e.target.value)} disabled={busy}
+            maxLength={20000} rows={3} placeholder="JSON array; not inferred from free text"
+            className="mt-1 w-full rounded-md border bg-background p-2 font-mono" />
+        </label>
+        <label className="mt-3 block text-sm">Optional preferred specifications
+          <textarea value={preferredText} onChange={(e) => setPreferredText(e.target.value)} disabled={busy}
+            maxLength={20000} rows={3} placeholder="JSON array, or [] when none apply"
+            className="mt-1 w-full rounded-md border bg-background p-2 font-mono" />
+        </label>
+        <label className="mt-2 flex gap-2 text-sm"><input type="checkbox" checked={confirmed}
+          onChange={(e) => setConfirmed(e.target.checked)} disabled={busy} />
+          I have included every mandatory condition from my request.</label>
+        <button type="button" onClick={() => void handleRequirements()} disabled={busy || !confirmed}
+          className="mt-3 rounded-md border px-3 py-2 text-sm disabled:opacity-50">Confirm specifications</button>
+      </details>}
 
       <div className="flex flex-wrap gap-2">
         <button
@@ -174,7 +219,7 @@ export default function MatchingPanel({
                 {match.rank_position}. {match.name}
               </h5>
               <span className="text-sm">
-                Score: {Number(match.compatibility_score).toFixed(0)}/100
+                Score: {Number(match.compatibility_score).toFixed(2)}/100
               </span>
             </div>
 
@@ -184,6 +229,22 @@ export default function MatchingPanel({
               Condition: {match.condition} · Current available quantity:{" "}
               {match.available_quantity}
             </p>
+
+            <p className="mt-2 text-sm">Evidence coverage: {match.evidence_coverage ?? "Unknown"}% · {match.scoring_version}</p>
+            {!match.currently_eligible && <p className="mt-2 text-sm text-red-600 dark:text-red-400">Stale or no longer eligible. Generate a new run before accepting.</p>}
+            {match.warnings?.length > 0 && <ul className="mt-2 list-disc pl-5 text-sm">
+              {match.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+            </ul>}
+            <details className="mt-2 text-sm"><summary className="cursor-pointer">Score evidence and contributions</summary>
+              <p className="mt-1">Missing optional factors are excluded, not scored zero. Contributions below are normalized score points.</p>
+              <div className="overflow-x-auto"><table className="mt-2 w-full text-left">
+                <thead><tr><th>Factor</th><th>Value (0–1)</th><th>Points</th></tr></thead>
+                <tbody>{Object.entries(match.factor_values ?? {}).map(([factor, value]) => <tr key={factor}>
+                  <td className="pr-3">{factor}</td><td>{value === null ? "Missing" : Number(value).toFixed(3)}</td>
+                  <td>{match.factor_contributions?.[factor] == null ? "Excluded" : Number(match.factor_contributions[factor]).toFixed(2)}</td>
+                </tr>)}</tbody>
+              </table></div>
+            </details>
 
             <p className="mt-1 text-xs text-muted-foreground">
               Confidence:{" "}
@@ -224,7 +285,7 @@ export default function MatchingPanel({
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    disabled={busy}
+                    disabled={busy || !match.currently_eligible}
                     onClick={() => void handleReview(match, "accepted")}
                     className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-50"
                   >
