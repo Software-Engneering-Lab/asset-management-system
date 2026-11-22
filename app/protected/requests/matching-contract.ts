@@ -1,5 +1,6 @@
 import { checkEligibility, satisfies, type MandatoryRequirement, type MatchingAssetEvidence, type MatchingRequest, type SpecificationValue } from "./eligibility";
 import { calculateCompatibility, compareCandidates, type FactorValues } from "./scoring";
+import { MATCHING_CONTRACT, EVIDENCE_SOURCE, mandatoryItemType, reusableEvidence } from "./reusable-evidence";
 
 export function object(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -9,7 +10,7 @@ export function parseRequirements(value: unknown): MandatoryRequirement[] {
   if (!Array.isArray(value) || value.length > 50) throw new Error("Use an array of at most 50 requirements.");
   return value.map((item: unknown) => {
     if (!object(item) || typeof item.field !== "string" || !/^[a-z][a-z0-9_]{0,63}$/.test(item.field) ||
-        !["eq", "gte", "lte"].includes(String(item.operator)) ||
+        typeof item.operator !== "string" || !["eq", "gte", "lte"].includes(item.operator) ||
         !["string", "number", "boolean"].includes(typeof item.value) ||
         (typeof item.value === "number" && !Number.isFinite(item.value)) ||
         (typeof item.value === "string" && (!item.value.trim() || item.value.length > 1000)) ||
@@ -25,7 +26,7 @@ export type Candidate = {
   evidence_snapshot: Record<string, unknown>;
 };
 export type Packet = {
-  contract_version: string; request_id: string; specifications: string; purpose: string;
+  contract_version: string; evidence_source: string; request_id: string; specifications: string; purpose: string;
   category_id: string; quantity: number; preferred_condition: string | null;
   required_date: string | null; preferred_location: string | null; request_status: string;
   assessment_date: string; base_total: number; candidate_limit: number;
@@ -34,7 +35,7 @@ export type Packet = {
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function parsePacket(value: unknown): Packet {
-  if (!object(value) || value.contract_version !== "weighted-evidence-v1" ||
+  if (!object(value) || value.contract_version !== MATCHING_CONTRACT || value.evidence_source !== EVIDENCE_SOURCE ||
       typeof value.request_id !== "string" || !uuid.test(value.request_id) ||
       typeof value.specifications !== "string" || typeof value.purpose !== "string" ||
       typeof value.category_id !== "string" || typeof value.quantity !== "number" ||
@@ -70,17 +71,21 @@ export function eligibleCandidates(packet: Packet) {
   let mandatory: MandatoryRequirement[];
   let preferred: MandatoryRequirement[];
   try {
+    if (packet.contract_version !== MATCHING_CONTRACT || packet.evidence_source !== EVIDENCE_SOURCE) throw new Error("Reusable evidence contract required.");
     mandatory = parseRequirements(packet.mandatory_requirements);
     preferred = parseRequirements(packet.preferred_requirements);
+    const itemType = mandatoryItemType(mandatory);
+    mandatory = mandatory.map((rule) => rule.field === "item_type" ? { ...rule, value: itemType } : rule);
+    if (preferred.some((rule) => rule.field === "item_type")) throw new Error("Item type must be mandatory.");
   } catch {
-    return { eligible: [] as Candidate[], excluded: packet.candidates.map((a) => ({ assetId: a.asset_id, reasons: ["Requester must confirm structured mandatory/preferred specifications."] })), mandatory: null, preferred: [] as MandatoryRequirement[] };
+    return { eligible: [] as Candidate[], excluded: packet.candidates.map((a) => ({ assetId: a.asset_id, reasons: ["Recorded requirements must include one mandatory item_type equality rule."] })), mandatory: null, preferred: [] as MandatoryRequirement[] };
   }
   const request: MatchingRequest = { categoryId: packet.category_id, quantity: packet.quantity, requiredDate: packet.required_date, mandatoryRequirements: mandatory };
   const eligible: Candidate[] = [];
   const excluded: { assetId: string; reasons: string[] }[] = [];
   for (const candidate of packet.candidates) {
     try {
-      const e = candidate.evidence;
+      const e = reusableEvidence(candidate.evidence);
       if (!e || !object(e.specifications) || ![true, false].includes(e.inspectionRequired as boolean) ||
           !["clear", "restricted", "unknown"].includes(String(e.safetyStatus))) throw new Error("Recorded safety/specification evidence is missing, stale or unverified.");
       for (const value of Object.values(e.specifications)) {
@@ -98,7 +103,7 @@ export function eligibleCandidates(packet: Packet) {
         specifications: e.specifications as MatchingAssetEvidence["specifications"],
       };
       const result = checkEligibility(request, facts, packet.assessment_date);
-      if (result.eligible) eligible.push(candidate); else excluded.push({ assetId: candidate.asset_id, reasons: result.reasons });
+      if (result.eligible) eligible.push({ ...candidate, evidence: e }); else excluded.push({ assetId: candidate.asset_id, reasons: result.reasons });
     } catch (error) { excluded.push({ assetId: candidate.asset_id, reasons: error instanceof Error ? [error.message] : ["Invalid evidence."] }); }
   }
   return { eligible, excluded, mandatory, preferred };
@@ -107,7 +112,7 @@ export function eligibleCandidates(packet: Packet) {
 export type SemanticAssessment = { asset_id: string; similarity: number; explanation: string };
 export function assembleWeightedMatches(packet: Packet, assessments: SemanticAssessment[]) {
   const checked = eligibleCandidates(packet);
-  if (checked.mandatory === null) throw new Error("Structured requirements have not been confirmed.");
+  if (checked.mandatory === null) throw new Error("Recorded structured requirements, including item type, are missing or invalid.");
   const eligible = checked.eligible;
   if (assessments.length !== eligible.length || new Set(assessments.map((x) => x.asset_id)).size !== eligible.length) throw new Error("Semantic evidence must cover each eligible shortlisted asset exactly once.");
   const costs = eligible.map((c) => optionalNumber(c.evidence!, "estimatedTransferRepairCost", "costEvidence", Number.MAX_SAFE_INTEGER)).filter((x): x is number => x !== null);

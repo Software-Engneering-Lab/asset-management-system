@@ -7,11 +7,11 @@ import { assembleWeightedMatches, eligibleCandidates, parsePacket, parseRequirem
 const factors = { specifications: .9, purposeSimilarity: .84, condition: .8, dateUrgency: 1, locationEffort: .7, financialEffect: .6, environmentalEffect: .8 };
 const score = (changes={}) => calculateCompatibility({assetId:"a",factors,aiConfidence:.9,estimatedTransferRepairCost:20,...changes});
 const id = (n) => `00000000-0000-0000-0000-${String(n).padStart(12,"0")}`;
-const request = { categoryId:id(90),quantity:2,requiredDate:"2026-11-20",mandatoryRequirements:[{field:"ram_gb",operator:"gte",value:16}] };
-const evidence = { safetyStatus:"clear",inspectionRequired:true,inspection:{result:"passed",inspectedOn:"2026-11-10",validUntil:"2026-12-01"},earliestReceiptDate:"2026-11-18",specifications:{ram_gb:16},locationEffortScore:.7,locationEvidence:"Verified route rubric",estimatedTransferRepairCost:20,costCurrency:"AED",costEvidence:"Estimate including transfer and repair",environmentalEffectScore:.8,environmentalEvidence:"Approved impact rubric" };
+const request = { categoryId:id(90),quantity:2,requiredDate:"2026-11-20",mandatoryRequirements:[{field:"item_type",operator:"eq",value:"laptop"},{field:"ram_gb",operator:"gte",value:16}] };
+const evidence = { safetyStatus:"clear",inspectionRequired:true,inspection:{result:"passed",inspectedOn:"2026-11-10",validUntil:"2026-12-01"},earliestReceiptDate:"2026-11-18",specifications:{item_type:"laptop",ram_gb:16},locationEffortScore:.7,locationEvidence:"Verified route rubric",estimatedTransferRepairCost:20,costCurrency:"AED",costEvidence:"Estimate including transfer and repair",environmentalEffectScore:.8,environmentalEvidence:"Approved impact rubric" };
 const assetFacts = {categoryId:id(90),isPublished:true,state:"Available",availableQuantity:2,condition:"Good",...evidence};
 const candidate = (n=1,changes={}) => ({asset_id:id(n),name:`Computer ${n}`,description:"Computer suitable for a teaching lab",condition:"Good",available_quantity:2,category_id:id(90),is_published:true,asset_state:"Available",evidence:structuredClone(evidence),evidence_snapshot:{version:n},...changes});
-const packet = (changes={}) => ({contract_version:"weighted-evidence-v1",request_id:id(99),specifications:"16 GB RAM",purpose:"Teaching lab",category_id:id(90),quantity:2,preferred_condition:"Good",required_date:"2026-11-20",preferred_location:"Campus",request_status:"Submitted",assessment_date:"2026-11-14",base_total:1,candidate_limit:25,mandatory_requirements:request.mandatoryRequirements,preferred_requirements:[],candidates:[candidate()],...changes});
+const packet = (changes={}) => ({contract_version:"weighted-reusable-v2",evidence_source:"renad_reusable_asset_evidence",request_id:id(99),specifications:"16 GB RAM",purpose:"Teaching lab",category_id:id(90),quantity:2,preferred_condition:"Good",required_date:"2026-11-20",preferred_location:"Campus",request_status:"Submitted",assessment_date:"2026-11-14",base_total:1,candidate_limit:25,mandatory_requirements:request.mandatoryRequirements,preferred_requirements:[],candidates:[candidate()],...changes});
 const semantic = (n=1,similarity=.84) => ({asset_id:id(n),similarity,explanation:"Intended for the same teaching-lab use."});
 
 test("documented weighted example is exactly 84.5 with 100% coverage",()=>{
@@ -70,15 +70,16 @@ test("unconfirmed/stale verified evidence cannot reach the model",()=>{
 });
 test("integrated score is derived from factors, never a supplied total/confidence",()=>{
  const [result]=assembleWeightedMatches(packet(),[{...semantic(),compatibility_score:1,confidence:1}]);
- // 35*1 + 25*.84 + 10*1 + 10*1 + 10*.7 + 5*1 + 5*.8 = 92.
- assert.equal(result.compatibility_score,92); assert.equal(result.evidence_coverage,100);
+ // Reusable contract has no optional location/cost/impact facts. Do not trust
+ // the legacy extra fields in this test payload: (35+25*.84+10+10)/80*100=95.
+ assert.equal(result.compatibility_score,95); assert.equal(result.evidence_coverage,80);
  assert.equal(result.confidence,null); assert.ok(result.warnings.some(x=>x.includes("no top-pick")));
  assert.deepEqual(result.evidence_snapshot,{version:1});
 });
 test("optional missing specifications omit the 35-weight factor without blocking eligibility",()=>{
  const p=packet({preferred_requirements:[{field:"colour",operator:"eq",value:"blue"}]});
  assert.equal(eligibleCandidates(p).eligible.length,1);
- const [result]=assembleWeightedMatches(p,[semantic()]);assert.equal(result.factor_values.specifications,null);assert.equal(result.evidence_coverage,65);
+ const [result]=assembleWeightedMatches(p,[semantic()]);assert.equal(result.factor_values.specifications,null);assert.equal(result.evidence_coverage,45);
 });
 test("only documented AED costs with a source are comparable",()=>{
  const p=packet({candidates:[candidate(1,{evidence:{...evidence,costCurrency:"USD"}})]});
