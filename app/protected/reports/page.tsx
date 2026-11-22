@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import Link from "next/link";
 import {
   generateReport,
   loadReports,
@@ -146,6 +147,11 @@ export default function ReportsPage() {
           <p className="mt-2 text-muted-foreground">
             Database figures, AI summaries and human-controlled publication.
           </p>
+          {reports !== null && (
+            <Link href="/protected/reports/records" className="mt-3 inline-block text-sm underline">
+              Basic request/transfer tables and CSV export (C9)
+            </Link>
+          )}
         </div>
 
         <button
