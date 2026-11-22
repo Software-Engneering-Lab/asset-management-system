@@ -32,7 +32,7 @@ export async function submitApprovalAction(
     } else if (operation === "approve" || operation === "reject" || operation === "return") {
       if (!reason || reason.length > 1000) return { ok: false, message: "Enter a reason (1–1,000 characters)." };
       const assetId = text("asset_id");
-      if (operation === "approve" && !uuid.test(assetId)) return { ok: false, message: "Select an eligible asset." };
+      if (operation === "approve" && !uuid.test(assetId)) return { ok: false, message: "Please select an eligible asset before approving." };
       const decision = operation === "approve" ? "Approved" : operation === "reject" ? "Rejected" : "Returned for Information";
       if (operation === "approve") {
         const hours = Number(text("expiry_hours"));
@@ -73,6 +73,6 @@ export async function submitApprovalAction(
     return { ok: false, message: "Connection interrupted. Refresh to check the request before retrying." };
   }
   // Shaikha's tracking and Budoor's stock screens use the same records.
-  for (const path of ["/approvals", "/protected/requests", "/assets", "/search"]) revalidatePath(path);
+  for (const path of ["/approvals", "/transfers", "/protected/requests", "/assets", "/search"]) revalidatePath(path);
   return { ok: true, message };
 }

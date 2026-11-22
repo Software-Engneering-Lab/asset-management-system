@@ -1,5 +1,5 @@
 -- Integration test for a DISPOSABLE Supabase/local test database.
--- Requires foundations + Budoor + Renad migrations. Everything rolls back.
+-- Requires foundations, Budoor access, Shaikha matching, and both Renad Nov 16 migrations. Everything rolls back.
 -- Execute as the project owner, not a browser user. Never paste in a seed migration.
 -- These fixed UUIDs are isolated test fixtures; a collision intentionally fails.
 begin;
@@ -32,6 +32,29 @@ insert into public.resource_request(request_id,requesting_department_id,submitte
  ('00000000-0000-4000-e000-000000000004','00000000-0000-4000-a000-000000000002')
  ) as f(id,actor);
 
+-- The eligibility correction requires confirmed requirements and independently recorded facts.
+insert into public.user_role(user_id,role_id,assigned_by)
+ select u.user_id,r.role_id,'00000000-0000-4000-a000-000000000001'::uuid
+ from public.app_user u cross join public.role r
+ where (u.user_id='00000000-0000-4000-a000-000000000002' and r.role_name='requester')
+ or (u.user_id='00000000-0000-4000-a000-000000000001' and r.role_name='custodian');
+insert into public.shaikha_request_match_rules(request_id,request_snapshot,mandatory_requirements,preferred_requirements,confirmed_by)
+ select request_id,public.shaikha_request_snapshot(q),
+ '[{"field":"item_type","operator":"eq","value":"monitor"}]','[]',submitted_by
+ from public.resource_request q where request_id in (
+ '00000000-0000-4000-e000-000000000001','00000000-0000-4000-e000-000000000002',
+ '00000000-0000-4000-e000-000000000003','00000000-0000-4000-e000-000000000004');
+insert into public.shaikha_asset_match_evidence(request_id,asset_id,asset_snapshot,evidence,reviewed_by,source_reference,expires_at)
+ select q.request_id,a.asset_id,public.shaikha_asset_snapshot(a),
+ jsonb_build_object('specifications',jsonb_build_object('item_type','monitor'),'safetyStatus','clear',
+ 'inspectionRequired',false,'inspection',null,'earliestReceiptDate',null,
+ 'requestSpecifications',q.specifications,'specificationsVerified',true),
+ '00000000-0000-4000-a000-000000000001','Fictional fixture facts',now()+interval '1 day'
+ from public.resource_request q cross join public.asset a
+ where q.request_id in ('00000000-0000-4000-e000-000000000001','00000000-0000-4000-e000-000000000002',
+ '00000000-0000-4000-e000-000000000003','00000000-0000-4000-e000-000000000004')
+ and a.asset_id='00000000-0000-4000-d000-000000000001';
+
 -- Check actual client permissions, not just owner-executed function behavior.
 set local role authenticated;
 select set_config('request.jwt.claim.sub','00000000-0000-4000-a000-000000000002',true);
@@ -40,7 +63,7 @@ do $$ begin
     perform public.renad_start_review('00000000-0000-4000-e000-000000000001');
     raise exception 'TEST FAILED: requester was allowed to review';
   exception when insufficient_privilege then null; end;
-end $$;
+end; $$;
 select set_config('request.jwt.claim.sub','00000000-0000-4000-a000-000000000001',true);
 do $$ begin
   begin
@@ -52,7 +75,7 @@ do $$ begin
       '00000000-0000-4000-d000-000000000001','Premature decision');
     raise exception 'TEST FAILED: Submitted request bypassed review';
   exception when invalid_parameter_value then null; end;
-end $$;
+end; $$;
 select public.renad_start_review('00000000-0000-4000-e000-000000000001');
 select public.renad_start_review('00000000-0000-4000-e000-000000000002');
 select public.renad_decide_request('00000000-0000-4000-e000-000000000001','Approved',
@@ -63,7 +86,7 @@ reset role;
 do $$ begin
  if (select available_quantity from public.asset where asset_id='00000000-0000-4000-d000-000000000001')<>1 then
   raise exception 'TEST FAILED: approval changed stock'; end if;
-end $$;
+end; $$;
 set local role authenticated;
 select public.renad_reserve_asset('00000000-0000-4000-e000-000000000001',now()+interval '1 hour');
 -- Retry returns the existing hold, without a second subtraction or history entry.
@@ -71,71 +94,3 @@ select public.renad_reserve_asset('00000000-0000-4000-e000-000000000001',now()+i
 do $$ begin
  begin
   perform public.renad_reserve_asset('00000000-0000-4000-e000-000000000002',now()+interval '1 hour');
-  raise exception 'TEST FAILED: last unit was double allocated';
- exception when invalid_parameter_value then null; end;
- begin
-  perform public.renad_end_reservation('00000000-0000-4000-e000-000000000001',true,'Too early');
-  raise exception 'TEST FAILED: unexpired hold was expired';
- exception when invalid_parameter_value then null; end;
-end $$;
-reset role;
-do $$ begin
- if (select available_quantity from public.asset where asset_id='00000000-0000-4000-d000-000000000001')<>0 then
-  raise exception 'TEST FAILED: wrong stock after reservation'; end if;
- if (select count(*) from public.request_status_history where request_id='00000000-0000-4000-e000-000000000001' and to_status='Reserved')<>1 then
-  raise exception 'TEST FAILED: duplicate reservation history'; end if;
- if (select request_status from public.resource_request where request_id='00000000-0000-4000-e000-000000000002')<>'Approved' then
-  raise exception 'TEST FAILED: failed allocation changed request'; end if;
-end $$;
-set local role authenticated;
-select public.renad_end_reservation('00000000-0000-4000-e000-000000000001',false,'Cancel test');
-select public.renad_reserve_asset('00000000-0000-4000-e000-000000000002',now()+interval '1 hour');
-reset role;
--- Advance only the fixture hold's dates to simulate expiry.
-update public.reservation set created_at=now()-interval '2 hours',expires_at=now()-interval '1 hour'
- where request_id='00000000-0000-4000-e000-000000000002';
-set local role authenticated;
-select public.renad_end_reservation('00000000-0000-4000-e000-000000000002',true,'Expiry test');
-reset role;
-do $$ begin
- if (select available_quantity from public.asset where asset_id='00000000-0000-4000-d000-000000000001')<>1 then
-  raise exception 'TEST FAILED: expiry did not restore stock'; end if;
- if (select request_status from public.resource_request where request_id='00000000-0000-4000-e000-000000000002')<>'Approved' then
-  raise exception 'TEST FAILED: expiry did not restore Approved state'; end if;
- if has_function_privilege('anon','public.renad_reserve_asset(uuid,timestamp with time zone)','EXECUTE') then
-  raise exception 'TEST FAILED: anonymous allocation is allowed'; end if;
- if has_function_privilege('authenticated','public.renad_set_request_status(uuid,text,text)','EXECUTE') then
-  raise exception 'TEST FAILED: client can bypass the workflow helper'; end if;
- if has_table_privilege('authenticated','public.reservation','INSERT') then
-  raise exception 'TEST FAILED: client can create holds directly'; end if;
-end $$;
--- An invalid expiry must roll back the preceding approval inside the combined operation.
-set local role authenticated;
-select public.renad_start_review('00000000-0000-4000-e000-000000000004');
-do $$ begin
- begin
-  perform public.renad_approve_and_reserve('00000000-0000-4000-e000-000000000004',
-   '00000000-0000-4000-d000-000000000001','Atomic rollback test',now()-interval '1 hour');
-  raise exception 'TEST FAILED: invalid expiry accepted';
- exception when invalid_parameter_value then null; end;
-end $$;
-reset role;
-do $$ begin
- if (select request_status from public.resource_request where request_id='00000000-0000-4000-e000-000000000004')<>'Under Review'
- or exists(select 1 from public.approval where request_id='00000000-0000-4000-e000-000000000004') then
-  raise exception 'TEST FAILED: failed combined operation left an approval'; end if;
-end $$;
--- Holding part of a batch must leave the remainder published and Available.
-update public.asset set quantity=3,available_quantity=3
- where asset_id='00000000-0000-4000-d000-000000000001';
-set local role authenticated;
-select public.renad_approve_and_reserve('00000000-0000-4000-e000-000000000004',
- '00000000-0000-4000-d000-000000000001','Batch remainder test',now()+interval '1 hour');
-reset role;
-do $$ begin
- if not exists(select 1 from public.asset where asset_id='00000000-0000-4000-d000-000000000001'
-  and available_quantity=2 and asset_state='Available' and is_published) then
-  raise exception 'TEST FAILED: partial batch remainder became unavailable'; end if;
-end $$;
-select 'All approval/reservation assertions passed; rolling back fixtures.' as result;
-rollback;

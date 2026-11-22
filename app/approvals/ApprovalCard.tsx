@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { submitApprovalAction } from "./actions";
 import type { ApprovalRequest, ApprovalFormState } from "@/lib/approvals/types";
 
@@ -10,6 +10,9 @@ const button = "rounded bg-blue-950 px-3 py-2 text-sm text-white disabled:opacit
 
 export default function ApprovalCard({ request, userId }: { request: ApprovalRequest; userId: string }) {
   const [result, action, pending] = useActionState(submitApprovalAction, initialState);
+  const [selectionError, setSelectionError] = useState("");
+  const [selectedAsset, setSelectedAsset] = useState("");
+  const [reason, setReason] = useState("");
   const ownRequest = request.submitted_by === userId;
   const status = request.request_status;
   const id = request.request_id;
@@ -25,7 +28,7 @@ export default function ApprovalCard({ request, userId }: { request: ApprovalReq
       <dl className="space-y-2 text-sm">
         <div><dt className="font-medium">Specifications</dt><dd className="whitespace-pre-wrap">{request.specifications}</dd></div>
         <div><dt className="font-medium">Purpose</dt><dd>{request.purpose}</dd></div>
-        <div><dt className="font-medium">Minimum preferred condition</dt><dd>{request.preferred_condition || "Not specified"}</dd></div>
+        <div><dt className="font-medium">Preferred condition</dt><dd>{request.preferred_condition || "Not specified"}</dd></div>
       </dl>
       {request.accepted_matches.length > 0 && (
         <details className="text-sm">
@@ -41,22 +44,30 @@ export default function ApprovalCard({ request, userId }: { request: ApprovalReq
       {request.latest_approval && <p className="text-sm">Decision reason: {request.latest_approval.reason}</p>}
       {request.reservation && <p className="text-sm">Held: {request.reservation.reserved_quantity} units. Expires: {new Date(request.reservation.expires_at).toUTCString()}</p>}
       {ownRequest ? <p role="status" className="text-sm font-medium">Another approver must handle your own request.</p> : (
-        <form action={action} className="space-y-3">
+        <form action={action} className="space-y-3" onSubmit={event => {
+          // Stop before the form resets; the database also checks the selected asset.
+          const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+          if (submitter?.value === "approve" && !selectedAsset) {
+            event.preventDefault();
+            setSelectionError("Please select an eligible asset before approving.");
+            event.currentTarget.querySelector<HTMLSelectElement>("select[name=asset_id]")?.focus();
+          } else setSelectionError("");
+        }}>
           <input type="hidden" name="request_id" value={id} />
           <fieldset disabled={pending} className="space-y-3">
             <legend className="sr-only">Actions for request {id}</legend>
             {status === "Submitted" && <button name="operation" value="review" className={button}>Start review</button>}
             {status === "Under Review" && <>
               <label htmlFor={`asset-${id}`} className="block text-sm font-medium">Asset for approval</label>
-              <select id={`asset-${id}`} name="asset_id" className={field} defaultValue="">
+              <select id={`asset-${id}`} name="asset_id" className={field} value={selectedAsset} onChange={event => { setSelectedAsset(event.target.value); setSelectionError(""); }}>
                 <option value="">Select an eligible asset</option>
                 {request.assets.map(asset => <option key={asset.asset_id} value={asset.asset_id}>{asset.name} — {asset.condition} — {asset.available_quantity} available</option>)}
               </select>
-              {request.assets.length === 0 && <p className="text-sm">No eligible stock currently meets this request. You can still reject it with a reason.</p>}
+              {request.assets.length === 0 && <p className="text-sm">No eligible stock currently meets this request. The requester and custodian can confirm specifications on the Transfers page. You can still reject it with a reason.</p>}
             </>}
             {(status === "Under Review" || status === "Approved" || status === "Reserved") && <>
               <label htmlFor={`reason-${id}`} className="block text-sm font-medium">Reason (required for decisions and ending a hold)</label>
-              <textarea id={`reason-${id}`} name="reason" maxLength={1000} rows={2} className={field} />
+              <textarea id={`reason-${id}`} name="reason" maxLength={1000} rows={2} className={field} value={reason} onChange={event => setReason(event.target.value)} />
             </>}
             {status === "Under Review" && <div className="flex flex-wrap gap-2">
               <button name="operation" value="approve" disabled={!request.assets.length} className={button}>Approve and reserve</button>
@@ -75,7 +86,8 @@ export default function ApprovalCard({ request, userId }: { request: ApprovalReq
             </div>}
           </fieldset>
           {pending && <p role="status" className="text-sm">Saving…</p>}
-          {result.message && <p role={result.ok ? "status" : "alert"} className="rounded border p-2 text-sm">{result.message}</p>}
+          {selectionError && <p role="alert" className="rounded border p-2 text-sm">{selectionError}</p>}
+          {!selectionError && result.message && <p role={result.ok ? "status" : "alert"} className="rounded border p-2 text-sm">{result.message}</p>}
         </form>
       )}
       <details className="text-sm">
