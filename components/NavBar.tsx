@@ -17,6 +17,7 @@ export default function NavBar({ user }: { user: CurrentUser }) {
         <Link href="/search" className="hover:underline">Search assets</Link>
         {/* C4 (Shaikha): request form and tracking live under /protected/requests */}
         <Link href="/protected/requests" className="hover:underline">Requests</Link>
+        <Link href="/protected/notifications" className="hover:underline">Notifications</Link>
         {canManageAssets && <Link href="/assets" className="hover:underline">My department&apos;s assets</Link>}
         {canRegister && <Link href="/assets/new" className="hover:underline">Register asset</Link>}
         {isAdmin && <Link href="/admin/departments" className="hover:underline">Departments</Link>}
