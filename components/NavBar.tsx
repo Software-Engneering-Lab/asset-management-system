@@ -7,8 +7,11 @@ import type { CurrentUser } from "@/lib/types";
 /** Top bar shown on every signed-in page. Links depend on the user's roles. */
 export default function NavBar({ user }: { user: CurrentUser }) {
   const canManageAssets = AuthService.hasRole(user, ROLES.CUSTODIAN, ROLES.ADMIN, ROLES.APPROVER);
-  const canRegister = AuthService.hasRole(user, ROLES.CUSTODIAN, ROLES.ADMIN);
+  // Only Asset Custodians register assets (Phase 4–5, UC-02). Admin alone cannot.
+  const canRegister = AuthService.hasRole(user, ROLES.CUSTODIAN);
   const isAdmin = AuthService.hasRole(user, ROLES.ADMIN);
+  // Admin and Approver see every department's assets, so the link says "All assets".
+  const seesAllDepartments = AuthService.hasRole(user, ROLES.ADMIN, ROLES.APPROVER);
 
   return (
     <header className="bg-blue-950 text-white">
@@ -17,7 +20,11 @@ export default function NavBar({ user }: { user: CurrentUser }) {
         <Link href="/search" className="hover:underline">Search assets</Link>
         {/* C4 (Shaikha): request form and tracking live under /protected/requests */}
         <Link href="/protected/requests" className="hover:underline">Requests</Link>
-        {canManageAssets && <Link href="/assets" className="hover:underline">My department&apos;s assets</Link>}
+        {canManageAssets && (
+          <Link href="/assets" className="hover:underline">
+            {seesAllDepartments ? "All assets" : "My department's assets"}
+          </Link>
+        )}
         {canRegister && <Link href="/assets/new" className="hover:underline">Register asset</Link>}
         {isAdmin && <Link href="/admin/departments" className="hover:underline">Departments</Link>}
         {isAdmin && <Link href="/admin/users" className="hover:underline">Users &amp; roles</Link>}
