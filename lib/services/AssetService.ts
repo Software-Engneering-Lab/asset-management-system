@@ -87,7 +87,7 @@ export class AssetService {
     const supabase = await createClient();
     const { data, error } = await supabase
       .from("asset_history_event")
-      .select("event_id, event_type, previous_state, new_state, details, event_at, app_user(full_name)")
+      .select("event_id, event_type, previous_state, new_state, details, event_at, performed_by, app_user(full_name)")
       .eq("asset_id", assetId)
       .order("event_at", { ascending: false });
     throwIfError(error, "the asset history");

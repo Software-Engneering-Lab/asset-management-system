@@ -91,6 +91,29 @@ set local role authenticated;
 select public.renad_reserve_asset('00000000-0000-4000-e000-000000000001',now()+interval '1 hour');
 -- Retry returns the existing hold, without a second subtraction or history entry.
 select public.renad_reserve_asset('00000000-0000-4000-e000-000000000001',now()+interval '1 hour');
-do $$ begin
- begin
-  perform public.renad_reserve_asset('00000000-0000-4000-e000-000000000002',now()+interval '1 hour');
+do $$
+begin
+  begin
+    perform public.renad_reserve_asset(
+      '00000000-0000-4000-e000-000000000002',
+      now() + interval '1 hour'
+    );
+
+    raise exception 'TEST FAILED: last unit was double allocated';
+  exception
+    when invalid_parameter_value then null;
+  end;
+
+  begin
+    perform public.renad_end_reservation(
+      '00000000-0000-4000-e000-000000000001',
+      true,
+      'Too early'
+    );
+
+    raise exception 'TEST FAILED: unexpired hold was expired';
+  exception
+    when invalid_parameter_value then null;
+  end;
+end;
+$$;

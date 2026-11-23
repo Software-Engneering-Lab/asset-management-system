@@ -185,7 +185,20 @@ export default function RequestsPage() {
                     />
                   </label>
                 </div>
-
+                <label className="block space-y-2">
+                  <span className="block">Item type *</span>
+                  <input
+                    name="item_type"
+                    required
+                    maxLength={80}
+                    placeholder="For example: monitor, printer, laptop"
+                    className={fieldClass}
+                  />
+                  <p className="text-sm text-muted-foreground">
+                    Enter the type of item, not the brand or model.
+                    Describe additional requirements below.
+                  </p>
+                </label>
                 <label className="block space-y-2">
                   <span className="block">Specifications *</span>
                   <textarea
@@ -196,6 +209,28 @@ export default function RequestsPage() {
                     rows={3}
                     className={fieldClass}
                   />
+                </label>
+                <label className="block space-y-2">
+                  <span className="block">
+                    Mandatory specification checks — optional
+                  </span>
+
+                  <textarea
+                    name="mandatory_requirements"
+                    rows={3}
+                    maxLength={10000}
+                    defaultValue="[]"
+                    className={fieldClass}
+                  />
+
+                  <p className="text-sm text-muted-foreground">
+                    Leave [] when item type is sufficient. Enter additional mandatory
+                    checks as a JSON array. For example:
+                  </p>
+
+                  <code className="block break-words text-xs">
+                    {'[{"field":"ram_gb","operator":"gte","value":16}]'}
+                  </code>
                 </label>
 
                 <label className="block space-y-2">

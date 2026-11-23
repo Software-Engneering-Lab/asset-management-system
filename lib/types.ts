@@ -55,6 +55,7 @@ export interface AssetHistoryEvent {
   details: string | null;
   event_at: string;
   app_user?: { full_name: string } | null;
+  performed_by: string | null;
 }
 
 export interface AssetInput {

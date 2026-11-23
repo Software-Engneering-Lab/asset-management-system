@@ -9,7 +9,11 @@ export default function NavBar({ user }: { user: CurrentUser }) {
   const canManageAssets = AuthService.hasRole(user, ROLES.CUSTODIAN, ROLES.ADMIN, ROLES.APPROVER);
   const canRegister = AuthService.hasRole(user, ROLES.CUSTODIAN, ROLES.ADMIN);
   const isAdmin = AuthService.hasRole(user, ROLES.ADMIN);
-
+  const canVerifyAssets = AuthService.hasRole(
+    user,
+    ROLES.CUSTODIAN,
+    ROLES.ADMIN
+  );
   return (
     <header className="bg-blue-950 text-white">
       <nav className="mx-auto flex max-w-6xl flex-wrap items-center gap-4 px-4 py-3 text-sm">
@@ -36,6 +40,21 @@ export default function NavBar({ user }: { user: CurrentUser }) {
         ) && (
           <Link href="/transfers" className="hover:underline">
             Transfers
+          </Link>
+        )}
+        {canVerifyAssets && (
+          <Link href="/asset-facts" className="hover:underline">
+            Verify asset facts
+          </Link>
+        )}
+        {AuthService.hasRole(
+          user,
+          ROLES.ADMIN,
+          ROLES.APPROVER,
+          ROLES.CUSTODIAN
+        ) && (
+          <Link href="/sustainability" className="hover:underline">
+            Sustainability
           </Link>
         )}
         <span className="ml-auto text-blue-100">

@@ -91,7 +91,10 @@ async function AssetDetailPageContent({
                     <td className="p-2">{new Date(h.event_at).toLocaleString("en-GB")}</td>
                     <td className="p-2">{h.event_type}</td>
                     <td className="p-2">{h.previous_state ?? "—"} → {h.new_state ?? "—"}</td>
-                    <td className="p-2">{h.app_user?.full_name ?? "—"}</td>
+                    <td className="p-2">
+                      {h.app_user?.full_name ??
+                        (h.performed_by ? `User ID: ${h.performed_by}` : "Not recorded")}
+                    </td>
                     <td className="p-2">{h.details ?? ""}</td>
                   </tr>
                 ))}

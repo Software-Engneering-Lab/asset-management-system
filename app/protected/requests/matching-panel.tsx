@@ -131,18 +131,21 @@ export default function MatchingPanel({
       <h4 className="font-semibold">Asset matching</h4>
 
       <p className="text-sm text-muted-foreground">
-        Up to five weighted recommendations from a shortlist of at most 25 basic
-        candidates, after verified eligibility checks. AI supplies purpose similarity,
+        Up to five weighted recommendations from a shortlist of at most 25 same-item-type
+        candidates, using reusable verified asset facts and all mandatory checks. AI supplies purpose similarity,
         not the overall score. Scores estimate suitability, not confidence. Acceptance does
         not approve a request or reserve stock.
       </p>
 
       {canReview && <details className="rounded-md border p-3">
-        <summary className="cursor-pointer font-medium">Confirm structured specifications before matching</summary>
-        <p className="mt-2 text-sm">Record all mandatory conditions from your request as typed JSON clauses.
+        <summary className="cursor-pointer font-medium">Review or edit structured matching requirements</summary>
+        <p className="mt-2 text-sm">Typed submission records your item type automatically; you do not need to confirm it again to generate matches.
+          When editing, include the complete list of other mandatory conditions as typed JSON clauses.
           Fields and units must match verified asset evidence. For example: <code>{'[{"field":"ram_gb","operator":"gte","value":16}]'}</code>.
-          Use <code>[]</code> only when you explicitly have no requirements in that group.
-          Unconfirmed requirements or unverified safety, inspection or date evidence block matching.</p>
+          The saved mandatory item type is retained if omitted and cannot be changed here.
+          Older untyped requests need one explicit <code>item_type</code> equality rule, for example <code>{'{"field":"item_type","operator":"eq","value":"printer"}'}</code>.
+          Use <code>[]</code> only when no other requirements apply in that group.
+          Missing requirements or unverified safety, inspection or arrival-date evidence still block matching.</p>
         <label className="mt-3 block text-sm">Mandatory specifications
           <textarea value={mandatoryText} onChange={(e) => setMandatoryText(e.target.value)} disabled={busy}
             maxLength={20000} rows={3} placeholder="JSON array; not inferred from free text"
@@ -157,7 +160,7 @@ export default function MatchingPanel({
           onChange={(e) => setConfirmed(e.target.checked)} disabled={busy} />
           I have included every mandatory condition from my request.</label>
         <button type="button" onClick={() => void handleRequirements()} disabled={busy || !confirmed}
-          className="mt-3 rounded-md border px-3 py-2 text-sm disabled:opacity-50">Confirm specifications</button>
+          className="mt-3 rounded-md border px-3 py-2 text-sm disabled:opacity-50">Save structured requirements</button>
       </details>}
 
       <div className="flex flex-wrap gap-2">
