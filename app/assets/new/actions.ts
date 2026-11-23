@@ -9,7 +9,8 @@ import type { FormState } from "@/lib/types";
 
 export async function registerAssetAction(_prev: FormState, formData: FormData): Promise<FormState> {
   // 1. Server-side permission check (C1) – runs even if someone calls this directly
-  await AuthService.requireRole(ROLES.CUSTODIAN, ROLES.ADMIN);
+  // Only Asset Custodians register assets (Phase 4–5, UC-02)
+  await AuthService.requireRole(ROLES.CUSTODIAN);
 
   // 2. Validate; on error keep what the user typed (FR-09)
   const { input, errors, values } = AssetValidator.fromForm(formData);

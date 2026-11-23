@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import Link from "next/link";
 import { signInAction } from "@/app/actions/auth";
 import type { FormState } from "@/lib/types";
 
@@ -31,6 +32,9 @@ export default function LoginForm() {
         className="w-full rounded bg-primary px-4 py-2 font-medium text-primary-foreground disabled:opacity-60">
         {pending ? "Signing in…" : "Sign in"}
       </button>
+      <p className="text-center text-sm">
+        <Link href="/auth/forgot-password" className="text-primary underline">Forgot password?</Link>
+      </p>
     </form>
   );
 }

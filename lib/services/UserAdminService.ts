@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { throwIfError } from "@/lib/services/DataLoadError";
 import { one, type Joined } from "@/lib/types";
 
-type UserRow = { user_id: string; full_name: string; email: string; account_status: string; department: Joined<{ name: string }> };
+type UserRow = { user_id: string; full_name: string; email: string; account_status: string; department_id: string; department: Joined<{ name: string }> };
 type LinkRow = { user_role_id: string; user_id: string; role: Joined<{ role_name: string }> };
 
 export interface UserWithRoles {
@@ -10,6 +10,7 @@ export interface UserWithRoles {
   full_name: string;
   email: string;
   account_status: string;
+  department_id: string;
   department_name: string | null;
   roles: { user_role_id: string; role_name: string }[];
 }
@@ -31,7 +32,7 @@ export class UserAdminService {
     const [{ data: users, error: usersError }, { data: links, error: linksError }] = await Promise.all([
       supabase
         .from("app_user")
-        .select("user_id, full_name, email, account_status, department(name)")
+        .select("user_id, full_name, email, account_status, department_id, department(name)")
         .order("full_name"),
       supabase.from("user_role").select("user_role_id, user_id, role(role_name)"),
     ]);
@@ -45,6 +46,7 @@ export class UserAdminService {
         full_name: u.full_name,
         email: u.email,
         account_status: u.account_status,
+        department_id: u.department_id,
         department_name: dept?.name ?? null,
         roles: ((links ?? []) as unknown as LinkRow[])
           .filter((l) => l.user_id === u.user_id)

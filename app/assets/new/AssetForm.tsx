@@ -87,11 +87,22 @@ export default function AssetForm({ categories, departments, custodians, default
 
       <div>
         <label htmlFor="owning_department_id" className="block text-sm font-medium">Owning department *</label>
-        <select id="owning_department_id" name="owning_department_id"
-          value={departmentId} onChange={(e) => setDepartmentId(e.target.value)} className={field}>
-          <option value="">Select…</option>
-          {departments.map((d) => <option key={d.department_id} value={d.department_id}>{d.code} – {d.name}</option>)}
-        </select>
+        {departments.length === 1 ? (
+          // A custodian registers for her own department only, so this is fixed.
+          <>
+            <input type="hidden" name="owning_department_id" value={departments[0].department_id} />
+            <p id="owning_department_id" className={`${field} bg-muted`}>
+              {departments[0].code} – {departments[0].name}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">Assets are registered for your own department.</p>
+          </>
+        ) : (
+          <select id="owning_department_id" name="owning_department_id"
+            value={departmentId} onChange={(e) => setDepartmentId(e.target.value)} className={field}>
+            <option value="">Select…</option>
+            {departments.map((d) => <option key={d.department_id} value={d.department_id}>{d.code} – {d.name}</option>)}
+          </select>
+        )}
         <Err name="owning_department_id" />
       </div>
 
@@ -102,12 +113,12 @@ export default function AssetForm({ categories, departments, custodians, default
       </div>
 
       <div>
-        <label htmlFor="custodian_id" className="block text-sm font-medium">Responsible custodian</label>
-        <select id="custodian_id" name="custodian_id" key={departmentId} defaultValue={custodianDefault} className={field}>
-          <option value="">No custodian assigned</option>
+        <label htmlFor="custodian_id" className="block text-sm font-medium">Responsible custodian *</label>
+        <select id="custodian_id" name="custodian_id" key={departmentId} defaultValue={custodianDefault} required className={field}>
+          {custodianDefault === "" && <option value="">Select…</option>}
           {deptCustodians.map((u) => <option key={u.user_id} value={u.user_id}>{u.full_name}</option>)}
         </select>
-        <p className="mt-1 text-xs text-muted-foreground">Only custodians of the owning department are listed.</p>
+        <p className="mt-1 text-xs text-muted-foreground">Every asset needs a custodian. Only custodians of the owning department are listed.</p>
       </div>
 
       <fieldset className="grid gap-4 border-t pt-4 md:col-span-2 md:grid-cols-3">

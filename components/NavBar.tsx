@@ -28,10 +28,12 @@ export default function NavBar({ user }: { user: CurrentUser }) {
         {canRegister && <Link href="/assets/new" className="hover:underline">Register asset</Link>}
         {isAdmin && <Link href="/admin/departments" className="hover:underline">Departments</Link>}
         {isAdmin && <Link href="/admin/users" className="hover:underline">Users &amp; roles</Link>}
+        {isAdmin && <Link href="/admin/users/new" className="hover:underline">Add user</Link>}
         <span className="ml-auto text-blue-100">
           {user.fullName} · {user.roles.join(", ") || "no role"}
           {user.departmentName ? ` · ${user.departmentName}` : ""}
         </span>
+        <Link href="/auth/update-password" className="hover:underline">Change password</Link>
         <form action={signOutAction}>
           <button type="submit" className="rounded border border-blue-200 px-2 py-1 hover:bg-blue-900">
             Sign out

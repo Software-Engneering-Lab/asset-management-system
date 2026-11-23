@@ -110,12 +110,12 @@ export class AssetService {
   }
 
   /**
-   * Can this user publish this asset? Admin, or a custodian of the OWNING department.
+   * Can this user publish this asset? Only a custodian of the OWNING department.
+   * The admin alone cannot (technical administration is not business authority, Phase 4–5 §6.2).
    * Being the asset's custodian alone is not enough. (Shows the button; the database checks again.)
    */
   static canPublish(user: CurrentUser, asset: Asset): boolean {
     if (asset.asset_state !== ASSET_STATES.REGISTERED) return false;
-    if (AuthService.hasRole(user, ROLES.ADMIN)) return true;
     return AuthService.hasRole(user, ROLES.CUSTODIAN) && asset.owning_department_id === user.departmentId;
   }
 
