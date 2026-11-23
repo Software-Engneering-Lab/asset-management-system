@@ -5,6 +5,7 @@ import NavBar from "@/components/NavBar";
 import { AuthService } from "@/lib/auth/AuthService";
 import { AssetService } from "@/lib/services/AssetService";
 import { publishAssetAction } from "./actions";
+import { PUBLISHABLE_CONDITIONS } from "@/lib/constants";
 
 const MESSAGES: Record<string, string> = {
   registered: "Asset registered. It is not visible to requesters until it is published.",
@@ -27,6 +28,8 @@ async function AssetDetailPageContent({
   if (!asset) notFound();
   const history = await AssetService.getHistory(id);
   const canPublish = AssetService.canPublish(user, asset);
+  // FR-10: only Good or Fair assets may be published. Say why BEFORE the click.
+  const publishBlocked = canPublish && !PUBLISHABLE_CONDITIONS.includes(asset.condition) ? `Cannot publish: condition "${asset.condition}" is not suitable for reuse. Record an inspection or repair first.` : null;
 
   const row = (label: string, value: ReactNode) => (
     <div className="grid grid-cols-3 gap-2 border-t py-2 text-sm">
@@ -51,7 +54,8 @@ async function AssetDetailPageContent({
             <h1 className="text-xl font-semibold">{asset.name}</h1>
             <p className="text-xs text-muted-foreground">Asset ID: {asset.asset_id}</p>
           </div>
-          {canPublish && (
+          {canPublish && publishBlocked && (<div className="max-w-xs text-right"><button type="button" disabled className="cursor-not-allowed rounded bg-muted px-4 py-2 text-sm font-medium text-muted-foreground">Publish as surplus</button><p className="mt-1 text-xs text-red-700">{publishBlocked}</p></div>)}
+          {canPublish && !publishBlocked && (
             <form action={publishAssetAction}>
               <input type="hidden" name="asset_id" value={asset.asset_id} />
               <button type="submit" className="rounded bg-green-800 px-4 py-2 text-sm font-medium text-white">
