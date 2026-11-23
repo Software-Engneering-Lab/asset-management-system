@@ -1,32 +1,7 @@
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { redirect } from "next/navigation";
 
+// Old starter-kit page. There is no self sign-up (only the administrator creates accounts),
+// so send anyone who lands here to sign in.
 export default function Page() {
-  return (
-    <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
-      <div className="w-full max-w-sm">
-        <div className="flex flex-col gap-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-2xl">
-                Thank you for signing up!
-              </CardTitle>
-              <CardDescription>Check your email to confirm</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">
-                You&apos;ve successfully signed up. Please check your email to
-                confirm your account before signing in.
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    </div>
-  );
+  redirect("/auth/login");
 }
