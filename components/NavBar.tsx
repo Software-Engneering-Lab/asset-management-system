@@ -110,6 +110,9 @@ export default function NavBar({ user }: { user: CurrentUser }) {
 
         {isAdmin && (
           <>
+            <Link href="/protected/reports" className="hover:underline">
+              Generate Reports
+            </Link>
             <Link href="/admin/departments" className="hover:underline">
               Departments
             </Link>
