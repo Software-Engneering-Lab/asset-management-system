@@ -78,7 +78,7 @@ export async function getSustainabilityAdvice(
           "x-goog-api-key": key,
         },
         cache: "no-store",
-        signal: AbortSignal.timeout(20000),
+        signal: AbortSignal.timeout(60000),
         body: JSON.stringify({
           systemInstruction: {
             parts: [
@@ -122,7 +122,11 @@ export async function getSustainabilityAdvice(
       },
     );
 
-    if (!response.ok) throw new Error("AI request failed");
+    if (!response.ok) {
+      const details = await response.text();
+      console.error("Gemini API error:", response.status, details);
+      throw new Error(`Gemini HTTP ${response.status}`);
+    }
 
     const body = await response.json();
 
@@ -189,7 +193,9 @@ export async function getSustainabilityAdvice(
       suggestions,
       availableMassKg,
     };
-  } catch {
+  } catch (error) {
+    console.error("AI3 sustainability error:", error);
+
     return {
       ok: false,
       message:

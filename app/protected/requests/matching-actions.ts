@@ -73,8 +73,21 @@ export async function generateMatches(requestId: string): Promise<MatchResult> {
     if (!process.env.GEMINI_API_KEY || !process.env.GEMINI_MODEL) return { success: false, message: "AI is unconfigured. These are verified unranked rule-based results, without scores.", fallback };
     const writer = createMatchingWriter();
     let ranking: Awaited<ReturnType<typeof rankEligibleAssets>>;
-    try { ranking = await rankEligibleAssets(packet); }
-    catch { return { success: false, message: "AI unavailable, timed out or invalid semantic evidence. These are unranked rule-based results, not AI scores.", fallback }; }
+    try {
+      ranking = await rankEligibleAssets(packet);
+    } catch (error) {
+      // Log the failure on the server without exposing credentials to the browser.
+      const message =
+        error instanceof Error ? error.message : "Unknown AI matching error";
+
+      console.error("AI2 matching failed:", message);
+      return {
+        success: false,
+        message:
+          "AI unavailable, timed out or invalid semantic evidence. These are unranked rule-based results, not AI scores.",
+        fallback,
+      };
+    }
     const runId = crypto.randomUUID();
     const { error: saveError } = await writer.rpc("shaikha_save_weighted_matches", {
       p_actor_id: auth.user.id, p_request_id: requestId, p_ranking_run_id: runId,
