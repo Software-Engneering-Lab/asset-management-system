@@ -83,13 +83,35 @@ export class AssetService {
   }
 
   /** Who did what, and when (feeds C6). */
+    /** Load history without exposing actors' full user profiles. */
   static async getHistory(assetId: string): Promise<AssetHistoryEvent[]> {
     const supabase = await createClient();
+
+    // Use the scoped function for staff who manage assets.
+    const { data: permitted, error: permissionError } = await supabase.rpc(
+      "renad_asset_history_with_names",
+      { p_asset_id: assetId },
+    );
+    // Temporary diagnostic: no names, IDs or credentials are logged.
+    const rows = Array.isArray(permitted) ? permitted : [];
+
+    if (!permissionError) {
+      return (permitted ?? []) as AssetHistoryEvent[];
+    }
+
+    // Preserve existing RLS-based access for other asset viewers.
+    if (permissionError.code !== "42501") {
+      throwIfError(permissionError, "the asset history");
+    }
+
     const { data, error } = await supabase
       .from("asset_history_event")
-      .select("event_id, event_type, previous_state, new_state, details, event_at, performed_by, app_user(full_name)")
+      .select(
+        "event_id, event_type, previous_state, new_state, details, event_at, performed_by, app_user(full_name)",
+      )
       .eq("asset_id", assetId)
       .order("event_at", { ascending: false });
+
     throwIfError(error, "the asset history");
     return (data ?? []) as unknown as AssetHistoryEvent[];
   }
