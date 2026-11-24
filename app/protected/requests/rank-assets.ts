@@ -5,11 +5,16 @@ import { assembleWeightedMatches, eligibleCandidates, object, type Packet, type 
 // AI supplies ONLY the purpose-similarity factor and a reason, never a total.
 export async function rankEligibleAssets(packet: Packet) {
   const apiKey = process.env.GEMINI_API_KEY, model = process.env.GEMINI_MODEL;
+  console.log("AI2 model in use:", model);
   if (!apiKey || !model) throw new Error("Gemini is not configured.");
   const candidates = eligibleCandidates(packet).eligible;
   if (!candidates.length || candidates.length > 25) throw new Error("No eligible shortlist.");
   const references = new Map(candidates.map((c, i) => [`a${i + 1}`, c]));
-  const ai = new GoogleGenAI({ apiKey, httpOptions: { timeout: 30000 } });
+  // Allow up to 60 seconds for Gemini to respond.
+  const ai = new GoogleGenAI({
+    apiKey,
+    httpOptions: { timeout: 60000 },
+  });
   const response = await ai.models.generateContent({
     model,
     contents: JSON.stringify({

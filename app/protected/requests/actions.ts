@@ -15,6 +15,7 @@ export async function submitRequest(
   };
 
   const category = text("category");
+  const itemType = text("item_type").toLowerCase();
   const specifications = text("specifications");
   const purpose = text("purpose");
   const quantityText = text("quantity");
@@ -24,12 +25,21 @@ export async function submitRequest(
   const location = text("preferred_location");
   const requiredDate = text("required_date");
 
+
+  if (!itemType || itemType.length > 80) {
+  return {
+    success: false,
+    message: "Enter an item type using 1–80 characters.",
+  };
+}
+
   if (!category || category.length > 100) {
     return {
       success: false,
       message: "Select a valid category.",
     };
   }
+
 
   if (!specifications || specifications.length > 5000) {
     return {
@@ -92,7 +102,32 @@ export async function submitRequest(
       };
     }
   }
+  let mandatoryRequirements: unknown;
 
+  try {
+    const raw = text("mandatory_requirements");
+
+    if (raw.length > 10000) {
+      return {
+        success: false,
+        message: "Mandatory requirements are too long.",
+      };
+    }
+
+    mandatoryRequirements = JSON.parse(raw || "[]");
+
+    if (!Array.isArray(mandatoryRequirements)) {
+      return {
+        success: false,
+        message: "Mandatory requirements must be a JSON array.",
+      };
+    }
+  } catch {
+    return {
+      success: false,
+      message: "Mandatory requirements contain invalid JSON.",
+    };
+  }
   try {
     const supabase = await createClient();
 
@@ -112,8 +147,9 @@ export async function submitRequest(
     // It must check the requester role, derive the department,
     // and save the request and its history in one transaction.
     const { data, error } = await supabase.rpc(
-      "shaikha_submit_request",
+      "renad_submit_typed_request",
       {
+        p_item_type: itemType,
         p_category_name: category,
         p_specifications: specifications,
         p_quantity: quantity,
@@ -122,6 +158,7 @@ export async function submitRequest(
         p_urgency: urgency,
         p_preferred_location: location || null,
         p_required_date: requiredDate || null,
+        p_mandatory: mandatoryRequirements,
       },
     );
 
@@ -133,6 +170,13 @@ export async function submitRequest(
             "Request submission is not enabled yet. The reviewed request migration must be applied.",
         };
       }
+      if (error.code === "22023") {
+        return {
+          success: false,
+          message: error.message,
+        };
+      }
+      
 
       if (error.code === "42501") {
         return {
@@ -148,6 +192,7 @@ export async function submitRequest(
           "The request could not be saved. Please check your account setup and try again.",
       };
     }
+    
 
     if (typeof data !== "string" || !data) {
       return {

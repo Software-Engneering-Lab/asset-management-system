@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createMatchingWriter } from "./matching-db";
 import { rankEligibleAssets } from "./rank-assets";
 import { eligibleCandidates, parsePacket, parseRequirements } from "./matching-contract";
+import { MATCHING_CONTRACT, EVIDENCE_SOURCE } from "./reusable-evidence";
 
 export type SavedMatch = {
   recommendation_id: string; asset_id: string; name: string; condition: string;
@@ -21,7 +22,7 @@ type MatchResult = { success: true; matches: SavedMatch[]; message: string } |
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function databaseMessage(code: string) {
-  if (["PGRST202", "42703", "42P01"].includes(code)) return "Matching correction is not enabled yet. The reviewed corrective migration must be applied.";
+  if (["PGRST202", "42883", "42703", "42P01"].includes(code)) return "Reusable matching is not enabled yet. The team must coordinate the provider and reviewed adapter migration; do not rerun old migrations.";
   if (code === "42501") return "Access denied. An active requester profile and ownership of this request are required.";
   if (code === "22023") return "The request/evidence/availability changed or the input is invalid. Refresh before retrying.";
   if (code === "P0001") return "Please wait at least 15 seconds between matching attempts.";
@@ -38,7 +39,7 @@ export async function confirmMatchingRequirements(requestId: string, mandatoryTe
     if (authError || !auth.user) return { success: false, message: "Please sign in." };
     const { error } = await db.rpc("shaikha_confirm_matching_requirements", { p_request_id: requestId, p_mandatory: mandatory, p_preferred: preferred });
     if (error) return { success: false, message: databaseMessage(error.code) };
-    return { success: true, message: "Structured requirements confirmed. Previous rankings may be stale; generate a new run." };
+    return { success: true, message: "Structured requirements saved; the original mandatory item type is preserved. Previous rankings may be stale; generate a new run." };
   } catch { return { success: false, message: "Use JSON arrays of field, operator (eq/gte/lte), and typed value. Use [] only if none apply." }; }
 }
 
@@ -50,7 +51,7 @@ export async function loadMatches(requestId: string): Promise<MatchResult> {
     if (authError || !auth.user) return { success: false, message: "Please sign in." };
     const { data, error } = await db.rpc("shaikha_read_matches", { p_request_id: requestId, p_ranking_run_id: null });
     if (error) return { success: false, message: databaseMessage(error.code) };
-    if (!data || data.contract_version !== "weighted-evidence-v1" || !Array.isArray(data.matches)) return { success: false, message: "Corrective matching migration is not installed." };
+    if (!data || data.contract_version !== MATCHING_CONTRACT || data.evidence_source !== EVIDENCE_SOURCE || !Array.isArray(data.matches)) return { success: false, message: "The coordinated reusable-matching migration is not installed." };
     return { success: true, matches: data.matches as SavedMatch[], message: data.matches.length ? "Latest saved weighted run. Stale recommendations cannot be accepted." : "No corrected saved recommendations. Legacy AI-invented scores are not shown." };
   } catch { return { success: false, message: "Unable to load saved matches." }; }
 }
@@ -66,14 +67,27 @@ export async function generateMatches(requestId: string): Promise<MatchResult> {
     const packet = parsePacket(raw);
     if (packet.request_id !== requestId) throw new Error("Mismatched request.");
     const checked = eligibleCandidates(packet);
-    if (checked.mandatory === null) return { success: false, message: "Confirm structured mandatory/preferred requirements below before ranking. Free text is not treated as verified requirements." };
-    if (!checked.eligible.length) return { success: true, matches: [], message: `No verified eligible assets in the ${packet.candidates.length}-asset shortlist (${packet.base_total} basic candidates total). ${checked.excluded.length} excluded for missing, stale or failing evidence. No AI call was made. Available/Good alone does not establish safety.` };
+    if (checked.mandatory === null) return { success: false, message: "This request needs recorded structured requirements with one mandatory item_type equality rule. Typed submission records these automatically; older requests need an explicit reviewed update. Free text is not verified requirements." };
+    if (!checked.eligible.length) return { success: true, matches: [], message: `No verified eligible assets in the ${packet.candidates.length}-asset same-type shortlist (${packet.base_total} basic category candidates total, before item-type filtering). ${checked.excluded.length} shortlisted assets excluded for failing evidence. Missing/unverified item types are not shortlisted. No AI call was made. Available/Good alone does not establish safety.` };
     const fallback = checked.eligible.slice(0, 5).map((c) => ({ asset_id: c.asset_id, name: c.name, condition: c.condition }));
     if (!process.env.GEMINI_API_KEY || !process.env.GEMINI_MODEL) return { success: false, message: "AI is unconfigured. These are verified unranked rule-based results, without scores.", fallback };
     const writer = createMatchingWriter();
     let ranking: Awaited<ReturnType<typeof rankEligibleAssets>>;
-    try { ranking = await rankEligibleAssets(packet); }
-    catch { return { success: false, message: "AI unavailable, timed out or invalid semantic evidence. These are unranked rule-based results, not AI scores.", fallback }; }
+    try {
+      ranking = await rankEligibleAssets(packet);
+    } catch (error) {
+      // Log the failure on the server without exposing credentials to the browser.
+      const message =
+        error instanceof Error ? error.message : "Unknown AI matching error";
+
+      console.error("AI2 matching failed:", message);
+      return {
+        success: false,
+        message:
+          "AI unavailable, timed out or invalid semantic evidence. These are unranked rule-based results, not AI scores.",
+        fallback,
+      };
+    }
     const runId = crypto.randomUUID();
     const { error: saveError } = await writer.rpc("shaikha_save_weighted_matches", {
       p_actor_id: auth.user.id, p_request_id: requestId, p_ranking_run_id: runId,

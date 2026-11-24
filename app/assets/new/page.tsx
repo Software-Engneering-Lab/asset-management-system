@@ -7,8 +7,8 @@ import { DepartmentService } from "@/lib/services/DepartmentService";
 import { ROLES } from "@/lib/constants";
 
 async function NewAssetPageContent() {
-  // Requesters typing /assets/new directly are sent to /access-denied
-  const user = await AuthService.requireRole(ROLES.CUSTODIAN, ROLES.ADMIN);
+  // Only Asset Custodians register assets (Phase 4–5, UC-02). Others are sent to /access-denied.
+  const user = await AuthService.requireRole(ROLES.CUSTODIAN);
 
   const [categories, allDepartments, custodians] = await Promise.all([
     AssetService.listCategories(),
@@ -16,10 +16,8 @@ async function NewAssetPageContent() {
     AssetService.listCustodians(),
   ]);
 
-  // Custodians can only register for their own department (also enforced in the database)
-  const departments = AuthService.hasRole(user, ROLES.ADMIN)
-    ? allDepartments
-    : allDepartments.filter((d) => d.department_id === user.departmentId);
+  // A custodian registers for her own department only (also enforced in the database)
+  const departments = allDepartments.filter((d) => d.department_id === user.departmentId);
 
   return (
     <>

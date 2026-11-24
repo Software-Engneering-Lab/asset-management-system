@@ -83,13 +83,35 @@ export class AssetService {
   }
 
   /** Who did what, and when (feeds C6). */
+    /** Load history without exposing actors' full user profiles. */
   static async getHistory(assetId: string): Promise<AssetHistoryEvent[]> {
     const supabase = await createClient();
+
+    // Use the scoped function for staff who manage assets.
+    const { data: permitted, error: permissionError } = await supabase.rpc(
+      "renad_asset_history_with_names",
+      { p_asset_id: assetId },
+    );
+    // Temporary diagnostic: no names, IDs or credentials are logged.
+    const rows = Array.isArray(permitted) ? permitted : [];
+
+    if (!permissionError) {
+      return (permitted ?? []) as AssetHistoryEvent[];
+    }
+
+    // Preserve existing RLS-based access for other asset viewers.
+    if (permissionError.code !== "42501") {
+      throwIfError(permissionError, "the asset history");
+    }
+
     const { data, error } = await supabase
       .from("asset_history_event")
-      .select("event_id, event_type, previous_state, new_state, details, event_at, app_user(full_name)")
+      .select(
+        "event_id, event_type, previous_state, new_state, details, event_at, performed_by, app_user(full_name)",
+      )
       .eq("asset_id", assetId)
       .order("event_at", { ascending: false });
+
     throwIfError(error, "the asset history");
     return (data ?? []) as unknown as AssetHistoryEvent[];
   }
@@ -110,12 +132,12 @@ export class AssetService {
   }
 
   /**
-   * Can this user publish this asset? Admin, or a custodian of the OWNING department.
+   * Can this user publish this asset? Only a custodian of the OWNING department.
+   * The admin alone cannot (technical administration is not business authority, Phase 4–5 §6.2).
    * Being the asset's custodian alone is not enough. (Shows the button; the database checks again.)
    */
   static canPublish(user: CurrentUser, asset: Asset): boolean {
     if (asset.asset_state !== ASSET_STATES.REGISTERED) return false;
-    if (AuthService.hasRole(user, ROLES.ADMIN)) return true;
     return AuthService.hasRole(user, ROLES.CUSTODIAN) && asset.owning_department_id === user.departmentId;
   }
 
