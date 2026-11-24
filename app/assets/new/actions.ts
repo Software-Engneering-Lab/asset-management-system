@@ -24,5 +24,14 @@ export async function registerAssetAction(_prev: FormState, formData: FormData):
     return { ok: false, message: result.error, values };
   }
 
+  // 4. AI 1: save the tags the custodian reviewed (if any), with the AI suggestion for the audit log
+  const tags = String(formData.get("tags") ?? "").split(",").map((t) => t.trim()).filter(Boolean);
+  if (tags.length && result.assetId) {
+    let suggestion: unknown = null;
+    try { suggestion = JSON.parse(String(formData.get("ai_suggestion") || "null")); } catch { suggestion = null; }
+    const saved = await AssetService.saveTags(result.assetId, tags, suggestion);
+    if (saved.error) console.error("AI 1 tags were not saved:", saved.error);
+  }
+
   redirect(`/assets/${result.assetId}?msg=registered`);
 }

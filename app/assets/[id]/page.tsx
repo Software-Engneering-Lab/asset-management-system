@@ -27,6 +27,7 @@ async function AssetDetailPageContent({
   const asset = await AssetService.getById(id);
   if (!asset) notFound();
   const history = await AssetService.getHistory(id);
+  const tags = await AssetService.getTags(id); // AI 1
   const canPublish = AssetService.canPublish(user, asset);
   // FR-10: only Good or Fair assets may be published. Say why BEFORE the click.
   const publishBlocked = canPublish && !PUBLISHABLE_CONDITIONS.includes(asset.condition) ? `Cannot publish: condition "${asset.condition}" is not suitable for reuse. Record an inspection or repair first.` : null;
@@ -70,6 +71,7 @@ async function AssetDetailPageContent({
           {row("Description", asset.description)}
           {row("Category", asset.asset_category?.name)}
           {row("Condition", asset.condition)}
+          {row("Tags (AI 1, reviewed by custodian)", tags.length ? tags.join(", ") : null)}
           {row("Quantity (available / total)", `${asset.available_quantity} / ${asset.quantity}`)}
           {row("Owning department", asset.department ? `${asset.department.code} – ${asset.department.name}` : null)}
           {row("Location", asset.location)}

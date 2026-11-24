@@ -1,7 +1,8 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useState, useTransition } from "react";
 import { registerAssetAction } from "./actions";
+import { suggestClassificationAction, type SuggestResult } from "./ai1-actions";
 import { CONDITIONS } from "@/lib/constants";
 import type { AssetCategory, Department, FormState } from "@/lib/types";
 
@@ -25,6 +26,18 @@ export default function AssetForm({ categories, departments, custodians, default
   const preferred = v.custodian_id ?? defaultCustodianId;
   const custodianDefault = deptCustodians.some((u) => u.user_id === preferred) ? preferred : "";
 
+  // AI 1 - Classification and tagging: suggestions only; the custodian accepts or edits each field.
+  const [name, setName] = useState(v.name ?? "");
+  const [description, setDescription] = useState(v.description ?? "");
+  const [categoryId, setCategoryId] = useState(v.category_id ?? "");
+  const [condition, setCondition] = useState(v.condition ?? "");
+  const [tags, setTags] = useState(v.tags ?? "");
+  const [ai, setAi] = useState<SuggestResult | null>(null);
+  const [asking, startAsking] = useTransition();
+  const suggestion = ai?.ok ? ai.suggestion : null;
+  const categoryName = (id: string | null) => categories.find((c) => c.category_id === id)?.name ?? "—";
+  const askAi = () => startAsking(async () => setAi(await suggestClassificationAction(name, description)));
+
   const field = "mt-1 w-full rounded border bg-background px-3 py-2";
   const Err = ({ name }: { name: string }) =>
     err[name] ? <p className="mt-1 text-sm text-red-700">{err[name]}</p> : null;
@@ -39,19 +52,53 @@ export default function AssetForm({ categories, departments, custodians, default
 
       <div className="md:col-span-2">
         <label htmlFor="name" className="block text-sm font-medium">Asset name *</label>
-        <input id="name" name="name" maxLength={150} defaultValue={v.name} className={field} />
+        <input id="name" name="name" maxLength={150} value={name} onChange={(e) => setName(e.target.value)} className={field} />
         <Err name="name" />
       </div>
 
       <div className="md:col-span-2">
         <label htmlFor="description" className="block text-sm font-medium">Description and specifications *</label>
-        <textarea id="description" name="description" rows={3} defaultValue={v.description} className={field} />
+        <textarea id="description" name="description" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} className={field} />
         <Err name="description" />
       </div>
 
+      <section aria-label="AI 1 suggestions" className="space-y-2 rounded border border-dashed p-3 md:col-span-2">
+        <div className="flex flex-wrap items-center gap-3">
+          <button type="button" onClick={askAi} disabled={asking}
+            className="rounded border px-3 py-1.5 text-sm font-medium disabled:opacity-60">
+            {asking ? "Suggesting…" : "Suggest category, condition and tags (AI 1)"}
+          </button>
+          <span className="text-xs text-muted-foreground">Suggestions only. Nothing changes until you accept it, and you can edit everything.</span>
+        </div>
+        {ai && !ai.ok && <p role="alert" className="text-sm text-red-700">{ai.message}</p>}
+        {suggestion && (
+          <div role="status" className="space-y-2 text-sm">
+            <p className="font-medium">
+              {suggestion.source === "ai" ? `AI suggestion (${suggestion.model})` : "Rule-based suggestion (AI not configured)"}
+            </p>
+            <p className="text-muted-foreground">{suggestion.reason}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <span>Category: <strong>{categoryName(suggestion.categoryId)}</strong></span>
+              {suggestion.categoryId && (
+                <button type="button" className="rounded border px-2 py-0.5" onClick={() => setCategoryId(suggestion.categoryId!)}>Use</button>
+              )}
+              <span className="ml-3">Condition: <strong>{suggestion.condition ?? "—"}</strong></span>
+              {suggestion.condition && (
+                <button type="button" className="rounded border px-2 py-0.5" onClick={() => setCondition(suggestion.condition!)}>Use</button>
+              )}
+              <span className="ml-3">Tags: <strong>{suggestion.tags.join(", ") || "—"}</strong></span>
+              {suggestion.tags.length > 0 && (
+                <button type="button" className="rounded border px-2 py-0.5" onClick={() => setTags(suggestion.tags.join(", "))}>Use</button>
+              )}
+            </div>
+          </div>
+        )}
+        <input type="hidden" name="ai_suggestion" value={suggestion ? JSON.stringify(suggestion) : ""} />
+      </section>
+
       <div>
         <label htmlFor="category_id" className="block text-sm font-medium">Category *</label>
-        <select id="category_id" name="category_id" defaultValue={v.category_id ?? ""} className={field}>
+        <select id="category_id" name="category_id" value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className={field}>
           <option value="">Select…</option>
           {categories.map((c) => <option key={c.category_id} value={c.category_id}>{c.name}</option>)}
         </select>
@@ -60,7 +107,7 @@ export default function AssetForm({ categories, departments, custodians, default
 
       <div>
         <label htmlFor="condition" className="block text-sm font-medium">Condition *</label>
-        <select id="condition" name="condition" defaultValue={v.condition ?? ""} className={field}>
+        <select id="condition" name="condition" value={condition} onChange={(e) => setCondition(e.target.value)} className={field}>
           <option value="">Select…</option>
           {CONDITIONS.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
@@ -119,6 +166,12 @@ export default function AssetForm({ categories, departments, custodians, default
           {deptCustodians.map((u) => <option key={u.user_id} value={u.user_id}>{u.full_name}</option>)}
         </select>
         <p className="mt-1 text-xs text-muted-foreground">Every asset needs a custodian. Only custodians of the owning department are listed.</p>
+      </div>
+
+      <div className="md:col-span-2">
+        <label htmlFor="tags" className="block text-sm font-medium">Tags (optional, comma-separated, up to 8)</label>
+        <input id="tags" name="tags" maxLength={300} placeholder="e.g. laptop, portable, 16gb-ram" value={tags}
+          onChange={(e) => setTags(e.target.value)} className={field} />
       </div>
 
       <fieldset className="grid gap-4 border-t pt-4 md:col-span-2 md:grid-cols-3">

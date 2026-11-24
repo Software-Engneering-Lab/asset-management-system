@@ -63,6 +63,25 @@ export class AssetService {
     return { assetId: data as string };
   }
 
+  /** AI 1: save the tags the custodian reviewed, with the AI suggestion for the audit trail. */
+  static async saveTags(assetId: string, tags: string[], suggestion: unknown): Promise<{ error?: string }> {
+    const supabase = await createClient();
+    const { error } = await supabase.rpc("budoor_save_asset_tags", {
+      p_asset_id: assetId,
+      p_tags: tags,
+      p_suggestion: suggestion ?? null,
+    });
+    return error ? { error: error.message } : {};
+  }
+
+  /** AI 1: read an asset's tags. Returns [] if the tags column is not installed yet. */
+  static async getTags(assetId: string): Promise<string[]> {
+    const supabase = await createClient();
+    const { data, error } = await supabase.from("asset").select("tags").eq("asset_id", assetId).maybeSingle();
+    if (error || !data) return [];
+    return Array.isArray((data as { tags?: unknown }).tags) ? ((data as { tags: string[] }).tags) : [];
+  }
+
   /** FR-10: publish a registered asset as surplus. */
   static async publish(assetId: string): Promise<{ error?: string }> {
     const supabase = await createClient();
@@ -92,9 +111,6 @@ export class AssetService {
       "renad_asset_history_with_names",
       { p_asset_id: assetId },
     );
-    // Temporary diagnostic: no names, IDs or credentials are logged.
-    const rows = Array.isArray(permitted) ? permitted : [];
-
     if (!permissionError) {
       return (permitted ?? []) as AssetHistoryEvent[];
     }
