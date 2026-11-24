@@ -1,0 +1,1 @@
+export async function resolve(s, c, n) { if (s === 'server-only') return { url: 'data:text/javascript,', shortCircuit: true }; if (s.startsWith('@/')) return n(new URL('../' + s.slice(2) + (s.endsWith('.ts')?'':'.ts'), import.meta.url).href, c); return n(s, c); }
