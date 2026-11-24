@@ -1,4 +1,3 @@
-
 import Link from "next/link";
 import { signOutAction } from "@/app/actions/auth";
 import { AuthService } from "@/lib/auth/AuthService";
@@ -7,21 +6,32 @@ import type { CurrentUser } from "@/lib/types";
 
 export default function NavBar({ user }: { user: CurrentUser }) {
   const canManageAssets = AuthService.hasRole(
-    user, ROLES.CUSTODIAN, ROLES.ADMIN, ROLES.APPROVER
+    user,
+    ROLES.CUSTODIAN,
+    ROLES.ADMIN,
+    ROLES.APPROVER,
   );
 
   const canRegister = AuthService.hasRole(user, ROLES.CUSTODIAN);
+
   const canVerifyAssets = AuthService.hasRole(
-    user, ROLES.CUSTODIAN, ROLES.ADMIN
+    user,
+    ROLES.CUSTODIAN,
+    ROLES.ADMIN,
   );
 
   const isAdmin = AuthService.hasRole(user, ROLES.ADMIN);
+
   const seesAllDepartments = AuthService.hasRole(
-    user, ROLES.ADMIN, ROLES.APPROVER
+    user,
+    ROLES.ADMIN,
+    ROLES.APPROVER,
   );
 
   const canApprove = AuthService.hasRole(
-    user, ROLES.APPROVER, ROLES.ADMIN
+    user,
+    ROLES.APPROVER,
+    ROLES.ADMIN,
   );
 
   const canTransfer = AuthService.hasRole(
@@ -29,13 +39,18 @@ export default function NavBar({ user }: { user: CurrentUser }) {
     ROLES.REQUESTER,
     ROLES.CUSTODIAN,
     ROLES.APPROVER,
-    ROLES.ADMIN
+    ROLES.ADMIN,
   );
 
   const canViewSustainability = AuthService.hasRole(
-    user, ROLES.ADMIN, ROLES.APPROVER, ROLES.CUSTODIAN
+    user,
+    ROLES.ADMIN,
+    ROLES.APPROVER,
+    ROLES.CUSTODIAN,
   );
 
+  // These checks control navigation visibility.
+  // Pages and database functions must also enforce permissions.
   return (
     <header className="bg-blue-950 text-white">
       <nav className="mx-auto flex max-w-6xl flex-wrap items-center gap-4 px-4 py-3 text-sm">
@@ -49,6 +64,10 @@ export default function NavBar({ user }: { user: CurrentUser }) {
 
         <Link href="/protected/requests" className="hover:underline">
           Requests
+        </Link>
+
+        <Link href="/protected/notifications" className="hover:underline">
+          Notifications
         </Link>
 
         {canManageAssets && (
@@ -94,9 +113,11 @@ export default function NavBar({ user }: { user: CurrentUser }) {
             <Link href="/admin/departments" className="hover:underline">
               Departments
             </Link>
+
             <Link href="/admin/users" className="hover:underline">
               Users &amp; roles
             </Link>
+
             <Link href="/admin/users/new" className="hover:underline">
               Add user
             </Link>

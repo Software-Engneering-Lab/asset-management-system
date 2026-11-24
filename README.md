@@ -108,3 +108,20 @@ Please file feedback and issues over on the [Supabase GitHub org](https://github
 - [Next.js Subscription Payments Starter](https://github.com/vercel/nextjs-subscription-payments)
 - [Cookie-based Auth and the Next.js 13 App Router (free course)](https://youtube.com/playlist?list=PL5S4mPUpp4OtMhpnp93EFSo42iQ40XjbF)
 - [Supabase Auth and the Next.js App Router](https://github.com/supabase/supabase/tree/master/examples/auth/nextjs)
+
+## Shaikha Alsereidi — Contributions
+
+Implemented the following features:
+
+- **C4 — Resource requests and tracking:** Request submission, validation, request tracking, and status history.
+- **AI2 — Asset matching:** Verified eligibility checks, weighted recommendations, and requester acceptance/rejection.
+- **AI5 — Operational reports:** Database-calculated figures, AI-generated summaries, fallback summaries, and admin review/publication.
+
+Initial implementation was ready for integration testing on **14 November 2026**. Development and testing were performed locally, with further integration testing and corrections completed afterward.
+
+Earlier commits used my laptop’s local Git identity (`sh97`) rather than an email linked to my GitHub account. This affected GitHub attribution, not the implementation itself.
+
+Implementation and testing evidence:
+- PR #2 — C4 requests and AI2 matching
+- PR #3 — AI5 operational reports
+- Detailed record: [Shaikha’s contributions](docs/SHAIKHA_CONTRIBUTIONS.md)
